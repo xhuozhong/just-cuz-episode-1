@@ -177,7 +177,7 @@
     if (!loaded || !hosts.length) return;
     const ready = hosts.filter(host => host.dataset.interactionState === 'ready').length;
     const failed = hosts.filter(host => host.dataset.interactionState === 'error').length;
-    const pendingAngle = hosts.some(host => host.dataset.anglePending === 'true');
+    const pendingAngle = hosts.some(host => host.dataset.interactionState === 'ready' && host.dataset.anglePending === 'true');
     const warming = hosts.some(host => host.dataset.renderMode === 'frames' && Number(host.dataset.totalFrames) > Number(host.dataset.loadedFrames || 0));
     panelLayer.setAttribute('aria-busy', String(ready + failed < hosts.length));
     caption.dataset.state = failed ? 'error' : ready === hosts.length && !pendingAngle ? 'ready' : 'loading';

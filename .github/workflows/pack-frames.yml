@@ -20,9 +20,9 @@ jobs:
           ref: main
           token: ${{ github.token }}
       - name: Pack and compare every original frame
-        run: python3 tools/pack_frames.py --replace
+        run: python3 tools/pack_frames.py --streaming --replace
       - name: Verify committed config and remaining pack bytes
-        run: python3 tools/pack_frames.py --verify
+        run: python3 tools/pack_frames.py --streaming --verify
       - name: Commit only frame packages and their source config
         run: |
           git config user.name "github-actions[bot]"

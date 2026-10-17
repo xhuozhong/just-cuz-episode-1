@@ -44,7 +44,17 @@
           if (!Number.isSafeInteger(index) || index < 0 || index >= entry.frameCount || covered.has(index)) return null;
           covered.add(index);
         }
-        packs.push(Object.freeze({source:pack.source, sha256:pack.sha256.toLowerCase(), byteLength:pack.byteLength, indices:Object.freeze(pack.indices.slice())}));
+        let frameBytes, frameSha256;
+        if (pack.frameBytes !== undefined || pack.frameSha256 !== undefined) {
+          if (!Array.isArray(pack.frameBytes) || !Array.isArray(pack.frameSha256)
+            || pack.frameBytes.length !== pack.indices.length || pack.frameSha256.length !== pack.indices.length
+            || !pack.frameBytes.every(length => Number.isSafeInteger(length) && length >= 12 && length <= 0xffffffff)
+            || !pack.frameSha256.every(sha)
+            || pack.frameBytes.reduce((total, length) => total + length, 12 + pack.indices.length * 8) !== pack.byteLength) return null;
+          frameBytes = Object.freeze(pack.frameBytes.slice());
+          frameSha256 = Object.freeze(pack.frameSha256.map(hash => hash.toLowerCase()));
+        }
+        packs.push(Object.freeze({source:pack.source, sha256:pack.sha256.toLowerCase(), byteLength:pack.byteLength, indices:Object.freeze(pack.indices.slice()), frameBytes, frameSha256}));
       }
       if (covered.size !== entry.frameCount) return null;
       packs = Object.freeze(packs);
@@ -94,32 +104,96 @@
     if (store.blobs.has(index)) return Promise.resolve(store.blobs.get(index));
     if (store.errors.has(index)) return Promise.reject(store.errors.get(index));
     const pack = store.packByIndex && store.packByIndex[index];
-    return enqueueRequest(store, pack ? pack.source : index, priority, index, pack).then(() => {
+    if (pack) {
+      let waiter = store.frameWaiters.get(index);
+      if (!waiter) {
+        let resolve, reject;
+        const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; });
+        waiter = {promise, resolve, reject}; store.frameWaiters.set(index, waiter);
+      }
+      void enqueueRequest(store, pack.source, priority, index, pack).catch(() => {});
+      return waiter.promise;
+    }
+    return enqueueRequest(store, index, priority, index, null).then(() => {
       if (store.disposed || !store.blobs.has(index)) throw new Error('Frame store disposed');
       return store.blobs.get(index);
     });
   }
-  async function unpack(store, pack, buffer) {
-    if (buffer.byteLength !== pack.byteLength) throw new Error('Frame pack byte length mismatch');
-    const digest = await store.subtle.digest('SHA-256', buffer);
-    const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
-    if (hash !== pack.sha256) throw new Error('Frame pack SHA-256 mismatch');
-    const bytes = new Uint8Array(buffer), view = new DataView(buffer);
+  async function digest(store, bytes) {
+    const result = await store.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(result), byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+  function webpPayload(bytes) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return bytes.length >= 12 && bytes[0] === 82 && bytes[1] === 73 && bytes[2] === 70 && bytes[3] === 70
+      && bytes[8] === 87 && bytes[9] === 69 && bytes[10] === 66 && bytes[11] === 80 && view.getUint32(4, true) + 8 === bytes.length;
+  }
+  function publishBlob(store, index, blob, generation) {
+    if (!current(store, generation)) throw new Error('Frame store disposed');
+    store.blobs.set(index, blob);
+    const waiter = store.frameWaiters.get(index);
+    if (waiter) { store.frameWaiters.delete(index); waiter.resolve(blob); }
+    for (const consumer of store.consumers) scheduleProgress(consumer);
+    schedulePump();
+  }
+  function packTable(pack, bytes) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     if (bytes.length < 12 || 'ORBF0001'.split('').some((char, index) => bytes[index] !== char.charCodeAt(0))) throw new Error('Invalid frame pack magic');
-    const count = view.getUint32(8, true);
-    if (count !== pack.indices.length || 12 + count * 8 > bytes.length) throw new Error('Invalid frame pack table count');
-    let offset = 12 + count * 8;
+    const count = view.getUint32(8, true), tableLength = 12 + count * 8;
+    if (count !== pack.indices.length || tableLength > bytes.length) throw new Error('Invalid frame pack table count');
+    let offset = tableLength;
     const rows = [];
     for (let row = 0; row < count; row++) {
       const index = view.getUint32(12 + row * 8, true), length = view.getUint32(16 + row * 8, true);
-      if (index !== pack.indices[row] || length < 12 || offset + length > bytes.length) throw new Error('Invalid frame pack table row');
-      if (bytes[offset] !== 82 || bytes[offset + 1] !== 73 || bytes[offset + 2] !== 70 || bytes[offset + 3] !== 70
-        || bytes[offset + 8] !== 87 || bytes[offset + 9] !== 69 || bytes[offset + 10] !== 66 || bytes[offset + 11] !== 80
-        || view.getUint32(offset + 4, true) + 8 !== length) throw new Error('Invalid frame pack WebP payload');
+      if (index !== pack.indices[row] || length < 12 || offset + length > pack.byteLength
+        || pack.frameBytes && length !== pack.frameBytes[row]) throw new Error('Invalid frame pack table row');
       rows.push({index, offset, length}); offset += length;
     }
-    if (offset !== bytes.length) throw new Error('Trailing frame pack bytes');
+    if (offset !== pack.byteLength) throw new Error('Trailing frame pack bytes');
+    return rows;
+  }
+  async function unpack(store, pack, buffer) {
+    if (buffer.byteLength !== pack.byteLength) throw new Error('Frame pack byte length mismatch');
+    const hash = await digest(store, buffer);
+    if (hash !== pack.sha256) throw new Error('Frame pack SHA-256 mismatch');
+    const bytes = new Uint8Array(buffer), rows = packTable(pack, bytes);
+    for (let row = 0; row < rows.length; row++) {
+      const item = rows[row], payload = bytes.subarray(item.offset, item.offset + item.length);
+      if (!webpPayload(payload)) throw new Error('Invalid frame pack WebP payload');
+      if (pack.frameSha256 && await digest(store, payload) !== pack.frameSha256[row]) throw new Error('Frame payload SHA-256 mismatch');
+    }
     return rows.map(row => [row.index, new Blob([new Uint8Array(buffer, row.offset, row.length)], {type:'image/webp'})]);
+  }
+  async function streamPack(store, request, response, generation) {
+    const pack = request.pack, bytes = new Uint8Array(pack.byteLength), reader = response.body.getReader();
+    const tableLength = 12 + pack.indices.length * 8;
+    let received = 0, rows = null, next = 0, complete = false;
+    request.reader = reader;
+    try {
+      for (;;) {
+        const chunk = await reader.read();
+        if (!current(store, generation)) throw new Error('Frame store disposed');
+        if (chunk.done) break;
+        if (!(chunk.value instanceof Uint8Array) || received + chunk.value.byteLength > pack.byteLength) throw new Error('Frame pack byte length mismatch');
+        bytes.set(chunk.value, received); received += chunk.value.byteLength;
+        // The entire table is bound before even the first payload is published.
+        if (!rows && received >= tableLength) rows = packTable(pack, bytes.subarray(0, received));
+        while (rows && next < rows.length && received >= rows[next].offset + rows[next].length) {
+          const row = rows[next], payload = bytes.subarray(row.offset, row.offset + row.length);
+          if (!webpPayload(payload)) throw new Error('Invalid frame pack WebP payload');
+          if (await digest(store, payload) !== pack.frameSha256[next]) throw new Error('Frame payload SHA-256 mismatch');
+          publishBlob(store, row.index, new Blob([payload], {type:'image/webp'}), generation); next++;
+        }
+      }
+      if (received !== pack.byteLength || !rows || next !== rows.length) throw new Error('Truncated frame pack');
+      if (await digest(store, bytes) !== pack.sha256) throw new Error('Frame pack SHA-256 mismatch');
+      if (!current(store, generation)) throw new Error('Frame store disposed');
+      complete = true;
+    } finally {
+      request.reader = null;
+      if (!complete) { try { void Promise.resolve(reader.cancel()).catch(() => {}); } catch (_) {} }
+      try { reader.releaseLock(); } catch (_) {}
+    }
   }
   function nextFetch() {
     let choice = null;
@@ -138,14 +212,18 @@
       request.started = true; request.controller = new AbortController(); fetchPending++;
       Promise.resolve().then(() => {
         if (!current(store, generation)) throw new Error('Frame store disposed');
-        return fetch(request.pack ? request.pack.source : store.sequence.frames[request.index], {signal:request.controller.signal});
+        const init = {signal:request.controller.signal};
+        if (request.pack) init.cache = 'no-cache';
+        return fetch(request.pack ? request.pack.source : store.sequence.frames[request.index], init);
       }).then(response => {
+        if (!current(store, generation)) throw new Error('Frame store disposed');
         if (!response.ok) throw new Error(`Frame ${request.pack ? 'pack' : 'image'} HTTP ${response.status}`);
+        if (request.pack && request.pack.frameBytes && response.body && typeof response.body.getReader === 'function') return streamPack(store, request, response, generation);
         return request.pack ? response.arrayBuffer().then(buffer => unpack(store, request.pack, buffer)) : response.blob();
       }).then(result => {
         if (!current(store, generation)) throw new Error('Frame store disposed');
         if (request.pack) {
-          for (const [index, blob] of result) store.blobs.set(index, blob);
+          if (result) for (const [index, blob] of result) publishBlob(store, index, blob, generation);
         } else {
           if (!result || result.size === 0) throw new Error('Frame image is empty');
           store.blobs.set(request.index, result);
@@ -154,7 +232,14 @@
         for (const consumer of store.consumers) scheduleProgress(consumer);
       }).catch(error => {
         if (current(store, generation)) {
-          for (const index of request.pack ? request.pack.indices : [request.index]) store.errors.set(index, error);
+          // Independently verified payloads remain usable even if a later row or
+          // the final pack hash fails; never publish any unverified remainder.
+          for (const index of request.pack ? request.pack.indices : [request.index]) {
+            if (store.blobs.has(index)) continue;
+            store.errors.set(index, error);
+            const waiter = store.frameWaiters.get(index);
+            if (waiter) { store.frameWaiters.delete(index); waiter.reject(error); }
+          }
           for (const consumer of store.consumers) if (store.errors.has(consumer.target)) scheduleRender(consumer);
         }
         request.reject(error);
@@ -179,13 +264,17 @@
     for (const store of stores.values()) {
       for (const consumer of store.consumers) {
         const index = consumer.target;
-        if (consumer.actualIndex !== index && !lru.has(keyFor(store, index)) && !store.pending.has(index) && !store.errors.has(index)) return {store, index, priority:0};
+        if (consumer.actualIndex !== index && !lru.has(keyFor(store, index)) && !store.pending.has(index) && !store.errors.has(index)
+          && (!store.sequence.packs || store.blobs.has(index))) return {store, index, priority:0};
       }
     }
     for (const store of stores.values()) {
       for (const consumer of store.consumers) {
         for (const index of neighbors(consumer)) {
           if (consumer.prefetched.has(index)) continue;
+          // Network waiters must not occupy the four bitmap-decode slots: a
+          // freshly verified demanded frame can arrive before its neighbors.
+          if (store.sequence.packs && !store.blobs.has(index)) continue;
           consumer.prefetched.add(index);
           if (!lru.has(keyFor(store, index)) && !store.pending.has(index) && !store.errors.has(index)) return {store, index, priority:1};
         }
@@ -256,8 +345,11 @@
     for (const [key, entry] of lru) if (entry.store === store) { entry.bitmap.close(); lru.delete(key); }
     for (const request of store.requests.values()) {
       if (request.controller) request.controller.abort();
+      if (request.reader) { try { void Promise.resolve(request.reader.cancel()).catch(() => {}); } catch (_) {} }
       request.reject(new Error('Frame store disposed'));
     }
+    for (const waiter of store.frameWaiters.values()) waiter.reject(new Error('Frame store disposed'));
+    store.frameWaiters.clear();
     store.requests.clear(); store.blobs.clear(); store.errors.clear(); store.pending.clear();
     schedulePump();
   }
@@ -276,7 +368,7 @@
     if (!store) {
       const packByIndex = sequence.packs ? new Array(sequence.frameCount) : null;
       if (packByIndex) for (const pack of sequence.packs) for (const index of pack.indices) packByIndex[index] = pack;
-      store = {key, id:++serial, sequence, packByIndex, subtle:sequence.packs ? window.crypto.subtle : null, generation:0, disposed:false, consumers:new Set(), blobs:new Map(), requests:new Map(), pending:new Set(), errors:new Map()};
+      store = {key, id:++serial, sequence, packByIndex, subtle:sequence.packs ? window.crypto.subtle : null, generation:0, disposed:false, consumers:new Set(), blobs:new Map(), frameWaiters:new Map(), requests:new Map(), pending:new Set(), errors:new Map()};
       stores.set(key, store);
       // Compressed images are small and reusable; decode only the requested/nearby frames.
       if (!sequence.packs) for (let index = 0; index < sequence.frameCount; index++) void requestBlob(store, index, 2).catch(() => {});
