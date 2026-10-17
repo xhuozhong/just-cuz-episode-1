@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "panelId": "page-029-panel-02",
+  "category": "bounds",
+  "status": "passed",
+  "sourcePageSha256": "244d4056452a6c71db40ae5902ced6c8f79c3e60547d5b29406ca941c58a65c2",
+  "sourcePanelSha256": "31d323af43f95be3fae85820d53c837def63177c0945327c8c0441bb80a65ae3",
+  "mediaSha256": "441a6ecfb90f0bacbba3e603b8027a321c268f7981058f8d40fddeb3d6a10239",
+  "overlaySha256": "d9ffedde5a62c77d3e35e6bfa9494f51d330676e7ca0d7cad1c6979d58caf74e",
+  "originalVerificationRecordSHA256": "4a04cd9d7e53caaedb9e79909f257d54ec93cf7b802b561b7fa892cb3d97655d",
+  "sourceEvidence": [
+    {
+      "sha256": "155ac91201dc6645765cecf51397dee5199e06914ecd740c22b6c0e55338b9df",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "a0a24ff05a2ecb83d2fa0bdb024bc460da357f583a32bf5f28f61bce41865327",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "041704086b3878e207ab4afd4cda1411ca39fa65833d2c7416187e279b9c57a7",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "4dcf2f9ffaac2250592f7215d9ac9052f75ed06d80afe383399db6156b8d9241",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "abc3714cbb30dd42a8ea657053db441775335c63c12f190c1ff62859b921a6e6",
+      "detailedEvidenceIncluded": false
+    }
+  ],
+  "summaryOfExistingAcceptedEvidence": true,
+  "newBrowserOrVisualReviewPerformedBySanitizer": false,
+  "privateDetailedProductionEvidenceIncluded": false
+}

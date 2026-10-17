@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "panelId": "page-034-panel-01",
+  "category": "bounds",
+  "status": "passed",
+  "sourcePageSha256": "6d2bce1343bbad77cea279d32cfa8437809e5ff91f28209e37c4b7b5752d009c",
+  "sourcePanelSha256": "a31528f72ed365c6751ea02ce9730c4c61d46359be04cc8baa25a803e9648baa",
+  "mediaSha256": "56da6f23983bf42ad594983ed58d53e44c0f6a635dc4d3070a0136cdaacb2094",
+  "overlaySha256": "03fdff8ae9cdb1f545338561805eb61ad9a15e0f4b67a94ac8d7841217df9f8a",
+  "originalVerificationRecordSHA256": "ceacd2eb50263f48d8d090db11c5fd5e403fe579b5ae6d05bbf42399ff3e3fe7",
+  "sourceEvidence": [
+    {
+      "sha256": "caac244a4ea498a0a563bbfc1e907bd03c0bd23cd79ef9c7f3397284b4eeae94",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "c031850a9434572ffe2e2503b1cb157af7d9bbf06520abca6b6f87273f623cd1",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "6962945e13c500e9851b114f7a8ab3aa16eac85e34ff6a4dd7a6bdc24c69f71f",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "caac244a4ea498a0a563bbfc1e907bd03c0bd23cd79ef9c7f3397284b4eeae94",
+      "detailedEvidenceIncluded": false
+    }
+  ],
+  "summaryOfExistingAcceptedEvidence": true,
+  "newBrowserOrVisualReviewPerformedBySanitizer": false,
+  "privateDetailedProductionEvidenceIncluded": false
+}

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "panelId": "page-014-panel-01",
+  "category": "bounds",
+  "status": "passed",
+  "sourcePageSha256": "d54451a154ee9fecacced539013ed6ae5c56f41533d0d487e80d4bdf280b0030",
+  "sourcePanelSha256": "65ec67c2878306ea02df6b4e2f443c70c7a1aa823df00507f3b1b5bc92059d78",
+  "mediaSha256": "ff8c4fba139f77aa0562041d9e5b02ff7c6e08561bade192a07e1f584987e562",
+  "overlaySha256": "e08800b3bfaa57d628b003f89d49b688c53bb22c0baf3d7c3dcd17e6e1ab1f0b",
+  "originalVerificationRecordSHA256": "2c55351a3ae6cf1712e2c825ba10d532cbfb8eeecd477f4918eaa3a29cd46f86",
+  "sourceEvidence": [
+    {
+      "sha256": "08e1c48ec82ad7db6795574fc8ba3f4afaeca05d3afbb0902d04fa5151156e25",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "6ed11762385849fbe4e56813a69fef85a5c602024c79ca7514e2a590adccaa13",
+      "detailedEvidenceIncluded": false
+    }
+  ],
+  "summaryOfExistingAcceptedEvidence": true,
+  "newBrowserOrVisualReviewPerformedBySanitizer": false,
+  "privateDetailedProductionEvidenceIncluded": false
+}

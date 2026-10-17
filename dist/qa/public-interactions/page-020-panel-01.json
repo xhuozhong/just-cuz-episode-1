@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "panelId": "page-020-panel-01",
+  "status": "passed",
+  "sourcePageSha256": "3f6e7a41c84c3659bb611ef463e688f208506bcd2ce8542d858116cc64e4061d",
+  "sourcePanelSha256": "cecf5fddda96489b28abaebece0701a1ca949e78818496022d4217ab68486cb3",
+  "mediaSha256": "db3168ad111e981ada7cdf91392d3e478620dbed42428f953e0ccaddb1085192",
+  "overlaySha256": "a0352084bbca52ffefee522eb3c3d8ef7d1bb6ec2e82f4e44195a64940d4beda",
+  "originalProducerEvidenceSHA256": [
+    "e0cac3a86efd4f980d944fd92ed499f7050b617c1f835705ffb954a02b93a01d"
+  ],
+  "originalInteractionEvidenceSHA256": [
+    "46c2706542f0f42a79fb8fd13dbeb1fd15de819bb9df307efce5add7c2f4e666"
+  ],
+  "originalLayoutRecordSHA256": "d01f1488712a4075420029a4aafa3c2acd5f45dd98f499a8ee0feb1701295992",
+  "geometryChanged": false,
+  "newInteractionAcceptanceClaim": false
+}

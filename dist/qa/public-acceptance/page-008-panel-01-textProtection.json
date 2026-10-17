@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "panelId": "page-008-panel-01",
+  "category": "textProtection",
+  "status": "passed",
+  "sourcePageSha256": "cf937b6784caf26771c0b2346a4bb1cd3effb797b915e8c7214199fc2191398d",
+  "sourcePanelSha256": "b78f3bd42da66d56545e11b30cc1b9dd1fd793bdad646f8a244482b5378fc169",
+  "mediaSha256": "dcbadfc23d5e1875d5e6202993f8a391b7134d8a8f1210b4a101c591cbcd2c1b",
+  "overlaySha256": "1192fd9e3735fc0561aba71034d2cb2aab91debd95a84d82dd25d595c43a4048",
+  "originalVerificationRecordSHA256": "886ab96b68ccd19d38cbca3a46b05e8e86e47abe34c46b09d08bb5da1b24294f",
+  "sourceEvidence": [
+    {
+      "sha256": "d4b5521b775f9c5c7eef342ccad2da900b40a2d97b93062e295528c63dafc5b5",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "67f7c61affbd5bfe4dc7c2c4a3901c8a3c53daaf730f19b781b4f96fd36a25cf",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "e35cddacef464ecd294f21101734bc3479612941afc988def91bf0b7779341c7",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "650508b86015f37c9bd53c03885a7edb486495ff125367ff1b31722151f54919",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "f90299c7e4fba8c913f6556d2101fe26f2170b38d4cf38714ec48112a18c8291",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "76378584b31d3fb364d2960c19e8c0609960910a464c077726c0268d3725ebba",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "c1fb94812a0c9ad2f625bc12ae4fa00c3c89da4fbcf48b190f15a968b60cc330",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "0795d59736ac837e171c6a95a5b76356dd7b58c5a1bba0d74a3a4357163caa0e",
+      "detailedEvidenceIncluded": false
+    }
+  ],
+  "summaryOfExistingAcceptedEvidence": true,
+  "newBrowserOrVisualReviewPerformedBySanitizer": false,
+  "privateDetailedProductionEvidenceIncluded": false
+}

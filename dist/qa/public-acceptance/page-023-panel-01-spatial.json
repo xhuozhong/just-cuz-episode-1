@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "panelId": "page-023-panel-01",
+  "category": "spatial",
+  "status": "passed",
+  "sourcePageSha256": "f990ba8c6f80ec0e3eafcf863a191e58fe67caf584fb1ef91f7e68b2aa45f334",
+  "sourcePanelSha256": "f8208861ff7d2f903a53d34d20f71444b6f208c05b29d6bf2ad738b71a9e0d2d",
+  "mediaSha256": "6d107e3d373acd5acfab857f62c7854ec90c69ce930abe38f68234d196b2652a",
+  "overlaySha256": "19aaf2ad402ac013068174d6cf0303b7438824ff66ffc73775cff4c2c189a435",
+  "originalVerificationRecordSHA256": "073c24942abef4589c562bb4834b176b23c0a5d0e8d3f731d773286d8d464936",
+  "sourceEvidence": [
+    {
+      "sha256": "65b324da94336a5d5bfecba862ee1a0b0980dbd3b5980a635ec9f6f3e13f70df",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "797b71dadee5b2c591904fce7f98b2e72e64bf9ec3d4d58628cb634a323bf048",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "a83da938ec22b1c6395d904ad33c7f04a9475602abc838d3ba34d7564ff22c86",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "f46106c9ea670a7876f6c8679fa812580f3b4e97caf7975e18d549d76ebc3231",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "8ce44adf2128e30b78a07380ce0df7c1cc0610b98aaec37c4415176070f3aa01",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "ad6f3cb11f28e9c490be9291ef7371c421b5f0ad235ab5f1ff8ee4dd01d1e188",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "cae7d23b300b8d68d5ac5010629ab47dc3f36d0bb5eb674e3d217c290ed5509d",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "e095f1da5996753a1b76883640aa9442eb9b37acdd70dde986130f728902ae31",
+      "detailedEvidenceIncluded": false
+    }
+  ],
+  "summaryOfExistingAcceptedEvidence": true,
+  "newBrowserOrVisualReviewPerformedBySanitizer": false,
+  "privateDetailedProductionEvidenceIncluded": false
+}

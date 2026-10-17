@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "panelId": "page-005-panel-02",
+  "category": "textProtection",
+  "status": "passed",
+  "sourcePageSha256": "1a0cf95e756558bb78063be628a7f45e39e0fcb96a2c1840c842ade390aa419f",
+  "sourcePanelSha256": "aa18a78912537eee00038b60f203a4b3661d31800141c8daf20fbe046a4de1d7",
+  "mediaSha256": "74866a546608ef7714fe30c0ece81ff4e35b6cf1bd3ec064bdab8016d14e28aa",
+  "overlaySha256": "9c11c169447590ee398670f648018c4ed591afbea5db7ae47f0a8bcc90c638b5",
+  "originalVerificationRecordSHA256": "5f33bf77bad8b2ca71875a92f714b97a5a4d2dc55ab12c4801dcecf495633a26",
+  "sourceEvidence": [
+    {
+      "sha256": "1db15e018c0cf0511c3a9c162f75644cff447e77f64bfdb433d3c6158c729907",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "47c4fcfc8c824c6836c973338f7a16e08396e2832507b16d13341dedf3118a2b",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "e589fbb5263e9c2628f36eb5c78c7b0461bff57bf570e88633cf67075405ca94",
+      "detailedEvidenceIncluded": false
+    }
+  ],
+  "summaryOfExistingAcceptedEvidence": true,
+  "newBrowserOrVisualReviewPerformedBySanitizer": false,
+  "privateDetailedProductionEvidenceIncluded": false
+}

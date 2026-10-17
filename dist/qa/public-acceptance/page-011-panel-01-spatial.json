@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "panelId": "page-011-panel-01",
+  "category": "spatial",
+  "status": "passed",
+  "sourcePageSha256": "d1e38bcf348b8a1d5e7360e980191ce116c50d660e13b69ff58e561f8e3e0ed4",
+  "sourcePanelSha256": "b5cfb68c8e18806e435d9c81c50aa72636ae92ec5439fea8b9e51b78e0fdb0bd",
+  "mediaSha256": "3a7132420ee72df5c9fcd7a4696d9392416be29005675ba5884656b4eecd5b5d",
+  "overlaySha256": "1a72d5b80481b202e12edbdb172c832d73da0626a504fa9de49786abd9d689a7",
+  "originalVerificationRecordSHA256": "b9394b924db00749469dec50246e642c544ba3da2683490b871dc112101e9496",
+  "sourceEvidence": [
+    {
+      "sha256": "67406078011392605778e64fef4941a55e8dc53ed8fd86f6d2b591568708d1d0",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "02f6e8ce8ce6dbe6de987f7aecbd98c562e53e45395f446bdf582c4458b7d1b1",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "21eb8422d4f5656f43d4566bd62068886ad975f460b65355b5f8778342db9832",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "581d07beb14e052eb8451eef01e8b3f252511ebac0c69ca3d4b8a5a7c201281c",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "482b944633317f5ba3ee042c36a814924a56c90c0259d11367a39cfaf29b47f3",
+      "detailedEvidenceIncluded": false
+    }
+  ],
+  "summaryOfExistingAcceptedEvidence": true,
+  "newBrowserOrVisualReviewPerformedBySanitizer": false,
+  "privateDetailedProductionEvidenceIncluded": false
+}

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#d7f2fa">
+  <title>Just Cuz · 第一集：生日派对</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="manifest.js"></script>
+  <script defer src="orbit-seek.js"></script>
+  <script defer src="orbit-inertia.js"></script>
+  <script defer src="frame-sequences.js"></script>
+  <script defer src="orbit-frame-cache.js"></script>
+  <script defer src="interaction-layouts.js"></script>
+  <script defer src="panel-player.js"></script>
+  <script defer src="app.js"></script>
+  <script defer src="music.js"></script>
+</head>
+<body>
+  <audio id="background-music" preload="auto" loop src="audio/episode-01-background.mp3"></audio>
+  <div class="book-shell">
+    <header class="book-header">
+      <div class="brand-lockup">
+        <img class="book-logo" src="ui-assets/just-cuz-title-transparent-v3.png" width="2172" height="724" alt="JUST CUZ" decoding="async">
+        <div class="book-title"><p class="eyebrow">翻开今天的小故事</p><h1>第一集 · 生日派对</h1></div>
+      </div>
+      <div class="header-corner">
+        <span class="stage-badge">一起转转看！</span>
+      </div>
+    </header>
+    <div class="book-meta">
+      <p class="intro">和 Mandy、Cuz 一起，翻开生日派对！</p>
+      <div class="book-status" role="status"><span id="book-count">34 页故事</span><span class="separator" aria-hidden="true">·</span><span id="source-panel-count">独立拖动</span><span class="separator" aria-hidden="true">·</span><span id="dynamic-count">双击还原</span></div>
+      <div class="music-controls" role="group" aria-label="背景音乐控制">
+        <button id="music-toggle" type="button" aria-label="开启背景音乐" aria-pressed="false">♫ 背景音乐</button>
+        <input id="music-volume" type="range" min="0" max="100" step="1" value="30" aria-label="背景音乐音量" hidden tabindex="-1" aria-hidden="true">
+        <span id="music-status" aria-live="polite">正在准备音乐</span>
+      </div>
+    </div>
+
+    <nav class="reader-toolbar" aria-label="阅读导航">
+      <div class="navigation-group">
+        <button id="prev-page" type="button" aria-label="上一页">← 上一页</button>
+        <form id="page-jump" class="page-jump">
+          <label for="page-number">第</label>
+          <input id="page-number" type="number" min="1" max="34" step="1" value="1" inputmode="numeric" aria-label="页码">
+          <span>/ 34 页</span><button type="submit" class="jump-button">前往</button>
+        </form>
+        <button id="next-page" type="button" aria-label="下一页">下一页 →</button>
+      </div>
+      <div class="chapter-group">
+        <label class="sr-only" for="chapter-select">选择章节</label>
+        <select id="chapter-select" aria-label="选择章节"></select>
+        <button id="open-directory" type="button">目录</button>
+      </div>
+    </nav>
+
+    <main>
+      <section class="reader" aria-label="完整漫画页">
+        <div class="reader-topline"><strong id="current-page-label">第 1 页</strong><span id="page-caption">原画完整呈现</span></div>
+        <div id="page-viewport" class="page-viewport" tabindex="0" aria-label="漫画阅读区，可放大后滚动查看">
+          <div id="viewport-inner" class="viewport-inner">
+            <div id="page-stage" class="page-stage">
+              <img id="page-image" alt="Just Cuz 第 1 页完整原画" draggable="false" decoding="async">
+              <div id="panel-layer" class="panel-layer"></div>
+            </div>
+          </div>
+          <div id="page-loading" class="page-loading" role="status">正在打开原页…</div>
+          <div id="page-error" class="page-error" hidden><p>这一页暂时没有打开，请重新尝试。</p><button id="retry-page" type="button">重新打开</button></div>
+        </div>
+        <div class="reader-actions">
+          <div class="zoom-controls" aria-label="缩放控制">
+            <button id="zoom-out" type="button" aria-label="缩小">−</button><output id="zoom-level" aria-live="polite">适合整页</output><button id="zoom-in" type="button" aria-label="放大">＋</button><button id="fit-page" type="button">适合整页</button>
+          </div>
+          <button id="original-button" type="button">查看原画</button>
+          <button id="panel-sources-button" type="button" aria-haspopup="dialog" aria-controls="panel-sources-dialog" hidden>分格原画</button>
+          <button id="reset-panels" type="button" hidden>复位视角</button>
+        </div>
+        <div id="panel-control-list" class="panel-control-list" hidden inert aria-hidden="true"></div>
+        <p id="page-progress" class="reading-note" aria-live="polite">第 1 / 34 页</p>
+      </section>
+      <p class="help">左右拖动一格换个角度，双击还原视角。</p>
+      <p id="dynamic-note" class="pending-note">每个画面都可以单独转动，双击回到原画。其他方向的画面参照原画补绘。</p>
+    </main>
+    <footer><span class="footer-signature">JUST CUZ · 生日派对</span><span>下次打开，接着这一页读</span></footer>
+  </div>
+
+  <dialog id="directory-dialog" class="directory-dialog" aria-labelledby="directory-title">
+    <div class="dialog-header"><h2 id="directory-title">生日派对 · 34 页</h2><button id="close-directory" type="button" aria-label="关闭目录">关闭</button></div>
+    <div id="directory-content" class="directory-content"></div>
+  </dialog>
+  <dialog id="original-dialog" class="original-dialog" aria-labelledby="original-title">
+    <div class="dialog-header"><h2 id="original-title">第 1 页完整原画</h2><button id="close-original" type="button" aria-label="关闭原画">关闭</button></div>
+    <div class="original-image-wrap"><img id="original-image" alt="完整原画对照" decoding="async"></div>
+    <div class="original-footer"><span id="original-size"></span><a id="original-download" download>保存完整原画</a></div>
+  </dialog>
+  <dialog id="panel-sources-dialog" class="panel-sources-dialog" aria-labelledby="panel-sources-title" aria-describedby="panel-sources-note">
+    <div class="dialog-header"><div><p id="panel-sources-page" class="eyebrow"></p><h2 id="panel-sources-title">完整分格原画</h2></div><button id="close-panel-sources" type="button" aria-label="关闭分格原画">关闭</button></div>
+    <p id="panel-sources-note" class="panel-sources-note">这里保留每一格的完整原画和原文字，可以和互动视角一起看。</p>
+    <div id="panel-sources-gallery" class="panel-sources-gallery"></div>
+  </dialog>
+  <noscript>请允许浏览器运行脚本以使用分页导航。34 张完整原图也保存在 pages 文件夹中。</noscript>
+</body>
+</html>

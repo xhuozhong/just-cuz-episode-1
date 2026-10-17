@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "coordinateSpace": "source-panel",
+  "purpose": "Independent views of sequential narrative moments; presentation metadata does not add accepted primary panels.",
+  "layouts": [
+    {
+      "panelId": "page-008-panel-01",
+      "coordinateSpace": "source-panel",
+      "sourcePageSha256": "cf937b6784caf26771c0b2346a4bb1cd3effb797b915e8c7214199fc2191398d",
+      "sourcePanelSha256": "b78f3bd42da66d56545e11b30cc1b9dd1fd793bdad646f8a244482b5378fc169",
+      "mediaSha256": "dcbadfc23d5e1875d5e6202993f8a391b7134d8a8f1210b4a101c591cbcd2c1b",
+      "videoSource": "videos/page-008-panel-01-dcbadfc23d5e.mp4",
+      "overlaySha256": "1192fd9e3735fc0561aba71034d2cb2aab91debd95a84d82dd25d595c43a4048",
+      "sourceBounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1600,
+        "height": 2000
+      },
+      "regions": [
+        {
+          "id": "gasp",
+          "title": "惊讶",
+          "artworkRect": {
+            "x": 1,
+            "y": 16,
+            "width": 469,
+            "height": 834
+          }
+        },
+        {
+          "id": "stomp",
+          "title": "跺脚",
+          "artworkRect": {
+            "x": 548,
+            "y": 451,
+            "width": 672,
+            "height": 804
+          }
+        },
+        {
+          "id": "cry",
+          "title": "哭喊",
+          "artworkRect": {
+            "x": 681,
+            "y": 1311,
+            "width": 885,
+            "height": 482
+          }
+        }
+      ],
+      "producerLayoutEvidence": [
+        {
+          "file": "qa/public-acceptance/page-008-panel-01-bounds.json",
+          "sha256": "f33ce52c5ccc3005d468f1d19b638671f42309faa2f76bf7660a7b675f7ade8e"
+        }
+      ],
+      "verification": {
+        "status": "passed",
+        "sourcePageSha256": "cf937b6784caf26771c0b2346a4bb1cd3effb797b915e8c7214199fc2191398d",
+        "mediaSha256": "dcbadfc23d5e1875d5e6202993f8a391b7134d8a8f1210b4a101c591cbcd2c1b",
+        "overlaySha256": "1192fd9e3735fc0561aba71034d2cb2aab91debd95a84d82dd25d595c43a4048",
+        "evidence": [
+          {
+            "file": "qa/public-interactions/page-008-panel-01.json",
+            "sha256": "1b9a6354cf5baae603cc3dbcf8060d0039b998bc38a6564c3bac46de4182cbd4"
+          }
+        ]
+      }
+    },
+    {
+      "panelId": "page-020-panel-01",
+      "coordinateSpace": "source-panel",
+      "sourcePageSha256": "3f6e7a41c84c3659bb611ef463e688f208506bcd2ce8542d858116cc64e4061d",
+      "sourcePanelSha256": "cecf5fddda96489b28abaebece0701a1ca949e78818496022d4217ab68486cb3",
+      "mediaSha256": "db3168ad111e981ada7cdf91392d3e478620dbed42428f953e0ccaddb1085192",
+      "videoSource": "videos/page-020-panel-01-db3168ad111e.mp4",
+      "overlaySha256": "a0352084bbca52ffefee522eb3c3d8ef7d1bb6ec2e82f4e44195a64940d4beda",
+      "sourceBounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1600,
+        "height": 2000
+      },
+      "regions": [
+        {
+          "id": "gasp",
+          "title": "雨中惊讶",
+          "artworkRect": {
+            "x": 110,
+            "y": 190,
+            "width": 385,
+            "height": 608
+          }
+        },
+        {
+          "id": "stomp",
+          "title": "雨中跺脚",
+          "artworkRect": {
+            "x": 804,
+            "y": 347,
+            "width": 518,
+            "height": 593
+          }
+        },
+        {
+          "id": "lying",
+          "title": "雨中倒地哭喊",
+          "artworkRect": {
+            "x": 24,
+            "y": 1038,
+            "width": 827,
+            "height": 574
+          }
+        },
+        {
+          "id": "kneel",
+          "title": "仰头呼喊",
+          "artworkRect": {
+            "x": 1037,
+            "y": 1197,
+            "width": 461,
+            "height": 516
+          }
+        }
+      ],
+      "producerLayoutEvidence": [
+        {
+          "file": "qa/public-acceptance/page-020-panel-01-bounds.json",
+          "sha256": "bf938775a178ba7a22e79fc6af7ca148edbc565c45b038e9c48487a7a64c6f97"
+        }
+      ],
+      "verification": {
+        "status": "passed",
+        "sourcePageSha256": "3f6e7a41c84c3659bb611ef463e688f208506bcd2ce8542d858116cc64e4061d",
+        "mediaSha256": "db3168ad111e981ada7cdf91392d3e478620dbed42428f953e0ccaddb1085192",
+        "overlaySha256": "a0352084bbca52ffefee522eb3c3d8ef7d1bb6ec2e82f4e44195a64940d4beda",
+        "evidence": [
+          {
+            "file": "qa/public-interactions/page-020-panel-01.json",
+            "sha256": "4f422f4ae72ab3787d449c387afdaaf0f4473cccf8a1aec173e89aff6ee8b80d"
+          }
+        ]
+      }
+    }
+  ]
+}

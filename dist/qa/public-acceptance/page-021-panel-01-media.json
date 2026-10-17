@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "panelId": "page-021-panel-01",
+  "category": "media",
+  "status": "passed",
+  "sourcePageSha256": "2f22c8f6ad2d1a1dfcb5f397ff003175e3d4369bba91787130d65185f3d386f7",
+  "sourcePanelSha256": "943cf8b5b1ba36d087847005c6009c3b7517a2d2b67c54309e67306e8dfef4b6",
+  "mediaSha256": "6aadb1ca8171915c2eb80c177b6d5dc43e759093955c82fe472969ee6c7a1e5d",
+  "overlaySha256": "cc6415f0a583925dbda2612262b41384f05d85e7675c04ce4a13efa98f77368b",
+  "originalVerificationRecordSHA256": "a79c70d7714522f884d414da255da50c1bf68b737126c92114e6c5f89bd22b27",
+  "sourceEvidence": [
+    {
+      "sha256": "5186317536f985c75a099f3c1e62e677ce8a24a357bdd3cdf678790af255119a",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "2ebe433ac7e1716d3d8c4cb59bdccdff3b26efb2f20a1d2d6bcd7821f692c1bf",
+      "detailedEvidenceIncluded": false
+    }
+  ],
+  "summaryOfExistingAcceptedEvidence": true,
+  "newBrowserOrVisualReviewPerformedBySanitizer": false,
+  "privateDetailedProductionEvidenceIncluded": false
+}

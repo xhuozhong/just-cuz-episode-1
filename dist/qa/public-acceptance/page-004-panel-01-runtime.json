@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "panelId": "page-004-panel-01",
+  "category": "runtime",
+  "status": "passed",
+  "sourcePageSha256": "3d8b7535c5bd7aedb508d2632b005910c188f14f746ba19cfd39cf1f1e6db823",
+  "sourcePanelSha256": "c6cccc54e0d336ea2859c7e3b32b474594c59a6af8d2223694b5cb13b0af7b93",
+  "mediaSha256": "294182ddad19746236b7d584e94fd41586410428f0e78cd5f26776c5e967c8fe",
+  "overlaySha256": "7361a34d33c3f17f714f187ebe7a83d041bcb41e839e231f61eee31a948f5cab",
+  "originalVerificationRecordSHA256": "468ada4957df74af130ed7b4fb6ad821d51b534f9c4e90e7e718823debb01cd5",
+  "sourceEvidence": [
+    {
+      "sha256": "c3a80a6a6b01f8c13799da2df883eac4aec06a561d8c03484e97c2d181ac85aa",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "0fcfc38aceb3e3ce60305ea5144f400b3b85257c7e9a613543dd726ee72b8d0d",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "be20c74c6dfc1e914700497066bc82f2f5fab978a2c2349571266a500268db1d",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "e5282e5bd50d9f7931381a69ef163a35842e0393f8fcb3be7affc4abfd7a89ac",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "0b32c0830dba50bf29e9289971eb0340eaec30713f371fce696d9667d0c6a85c",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "b1a372ab00fae0867869f7c8d0d46ee03e099c1e788f587d7ae2fd70ea48f297",
+      "detailedEvidenceIncluded": false
+    }
+  ],
+  "summaryOfExistingAcceptedEvidence": true,
+  "newBrowserOrVisualReviewPerformedBySanitizer": false,
+  "privateDetailedProductionEvidenceIncluded": false
+}

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "panelId": "page-031-panel-01",
+  "category": "spatial",
+  "status": "passed",
+  "sourcePageSha256": "72c9233a78318aebd868b85afc810a4b5c88c8f1c7ae993703651ce0b930909b",
+  "sourcePanelSha256": "9e8f9cd8ce6bb3d47b19f61bd4cb6976cf19074a112e76e37138c0b8f4ac1425",
+  "mediaSha256": "8c9a7454fb65ae4756cc685c5703b843d49d96c8b4e0196637d9bc8717fffd3b",
+  "overlaySha256": "1f1adc307e983f33c3e0a41a35f6072505ed12673ea0591c5f5e05fbd0fccde6",
+  "originalVerificationRecordSHA256": "9ed58961127906e05ea5c19944b4a97af81bff32f7e9c361904340e7f2fc08d0",
+  "sourceEvidence": [
+    {
+      "sha256": "5d8db72aed7b52dc7bfcc4a831f2bb5beddaefe0bdb431fb55c0efe7d968383a",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "e97a37c6f36bec618dd69689e3e887bb6cf0a559899fbf632fdd61ac1ca6c662",
+      "detailedEvidenceIncluded": false
+    },
+    {
+      "sha256": "b93c5ff889684a1d058d1b46ab57d41210c13258aae9f42b2de77a06abdbebcd",
+      "detailedEvidenceIncluded": false
+    }
+  ],
+  "summaryOfExistingAcceptedEvidence": true,
+  "newBrowserOrVisualReviewPerformedBySanitizer": false,
+  "privateDetailedProductionEvidenceIncluded": false
+}
