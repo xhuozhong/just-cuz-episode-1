@@ -241,6 +241,12 @@
       inFlight = false; clearTimeout(timer); clearTimeout(loadTimer); clearTimeout(protectionTimer);
       notice.textContent = message; retry.hidden = false; updateAvailability(); updateActual();
     }
+    function loadingSlow(message) {
+      // A slow network is not a failed asset. Keep the original visible until
+      // the existing decode and protection checks actually finish.
+      if (disposed || loadFailed) return;
+      notice.textContent = message; retry.hidden = false; updateAvailability();
+    }
     function issueSeek() {
       if (disposed || inFlight || desired === null || !seekReady()) return;
       const target = desired;
@@ -301,7 +307,7 @@
         maskReady = true; updateAvailability();
       };
       protection.onerror = () => { if (!disposed && attempt === protectionAttempt) fail('文字与格框保护层未打开，已保留原画。请重新打开。', true); };
-      protectionTimer = setTimeout(() => { if (!disposed && attempt === protectionAttempt) fail('文字与格框保护层尚未打开，已保留原画。请重新打开。', true); }, 15000);
+      protectionTimer = setTimeout(() => { if (!disposed && attempt === protectionAttempt) loadingSlow('文字与格框保护层仍在加载，原画可继续阅读。'); }, 15000);
       protection.src = source;
     }
     function startLoad() {
@@ -310,7 +316,7 @@
       notice.textContent = '正在打开视频…'; retry.hidden = true;
       loadProtection(); updateAvailability();
       if (loadFailed) return;
-      loadTimer = setTimeout(() => fail('视频尚未打开，原画仍可阅读。请检查文件后重新打开。', true), 15000);
+      loadTimer = setTimeout(() => loadingSlow('视频仍在加载，原画可继续阅读。'), 15000);
       video.load();
     }
     video.addEventListener('loadedmetadata', () => {
