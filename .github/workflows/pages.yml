@@ -23,6 +23,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+      - name: Verify page configurations and frame packages
+        run: python3 tools/pack_frames.py --streaming --verify
+      - name: Verify reader bundle matches retained sources
+        run: python3 tools/bundle_runtime.py --verify
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload static comic

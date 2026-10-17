@@ -6,7 +6,7 @@
 }
 * { box-sizing:border-box; }
 html { min-height:100%; background:#d7f2fa; }
-body { margin:0; min-height:100svh; color:var(--ink); font-family:"Just Cuz Cute","YouYuan","幼圆","Comic Sans MS","Microsoft YaHei","PingFang SC",sans-serif; font-size:15px; line-height:1.5; background-color:#d7f2fa; background-image:url("ui-assets/storybook-background-v3.png"); background-size:cover; background-position:center top; background-repeat:no-repeat; background-attachment:fixed; }
+body { margin:0; min-height:100svh; color:var(--ink); font-family:"Just Cuz Cute","YouYuan","幼圆","Comic Sans MS","Microsoft YaHei","PingFang SC",sans-serif; font-size:15px; line-height:1.5; background-color:#d7f2fa; background-image:url("ui-assets/storybook-background-preview-v4.webp"); background-size:cover; background-position:center top; background-repeat:no-repeat; background-attachment:fixed; }
 button,input,select { font:inherit; }
 button,select,.original-footer a,.panel-source-footer a { min-width:44px; min-height:44px; border:2px solid var(--ink); border-radius:17px; padding:8px 13px; color:var(--ink); background:var(--paper); font-weight:700; }
 button { cursor:pointer; touch-action:manipulation; box-shadow:none; }
@@ -205,3 +205,5 @@ noscript { display:block; margin:16px; padding:14px; border:2px solid var(--ink)
 #page-caption[data-state="ready"] { color:#28684c; }
 #page-caption[data-state="error"] { color:#975038; }
 #retry-interaction { min-height:30px; padding:4px 9px; font-size:12px; box-shadow:none; white-space:nowrap; }
+
+body.reader-art-ready { background-image:url("ui-assets/storybook-background-v3.webp"); }

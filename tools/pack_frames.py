@@ -6,6 +6,8 @@ payload against its original. --replace deletes only verified, config-referenced
 WebP files inside dist/frames. --verify is read-only and also works after removal.
 --streaming adds per-frame lengths/SHA256 and orders each pack near frame zero
 first. Existing, fully verified packs can supply original payloads in memory.
+The full JSON remains an offline audit source; the browser JS contains only a
+hash-bound page index, with complete page entries in frame-config/page-XXX.json.
 """
 
 import argparse
@@ -21,6 +23,7 @@ import tempfile
 MAGIC = b"ORBF0001"
 PACK_COUNT = 4
 JS_PREFIX = "window.COMIC_FRAME_SEQUENCES = Object.freeze("
+INDEX_PREFIX = "window.COMIC_FRAME_INDEX = Object.freeze("
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 PANEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
 
@@ -53,13 +56,80 @@ def check_webp(data, source):
     require(struct.unpack_from("<I", data, 4)[0] + 8 == len(data), f"Invalid WebP byte length: {source}")
 
 
-def load_config(dist):
+def manifest_pages(dist):
+    path = dist / "manifest.js"
+    require(path.resolve() == path, "Manifest cannot be a symlink")
+    source = path.read_text(encoding="utf-8-sig").strip()
+    prefix = "window.COMIC_BOOK = "
+    require(source.startswith(prefix) and source.endswith(";"), "Unexpected manifest.js wrapper")
+    book = json.loads(source[len(prefix):-1])
+    pages = book.get("pages")
+    require(isinstance(pages, list) and pages, "Manifest has no pages")
+    ids = set()
+    for page in pages:
+        page_id, page_sha = page.get("id"), page.get("sha256")
+        require(isinstance(page_id, str) and re.fullmatch(r"page-[0-9]{3,6}", page_id), "Unsafe manifest page id")
+        require(isinstance(page_sha, str) and SHA256.fullmatch(page_sha), f"Invalid source page SHA: {page_id}")
+        require(page_id not in ids, "Duplicate manifest page id")
+        ids.add(page_id)
+    return pages
+
+
+def page_outputs(dist, config):
+    pages = manifest_pages(dist)
+    groups = {page["id"]: [] for page in pages}
+    page_by_id = {page["id"]: page for page in pages}
+    for entry in config["entries"]:
+        match = re.match(r"(page-[0-9]{3,6})-panel-", entry["panelId"])
+        page = page_by_id.get(match.group(1)) if match else None
+        require(page is not None and entry.get("sourcePageSha256") == page["sha256"], f"Sequence not bound to its manifest page id/SHA: {entry['panelId']}")
+        groups[page["id"]].append(entry)
+    shards, index_pages = [], []
+    for page in pages:
+        entries = groups[page["id"]]
+        require(all(entry["panelId"].startswith(page["id"] + "-panel-") for entry in entries), f"Panel id disagrees with source page: {page['id']}")
+        shard = {"schemaVersion": 1, "entries": entries}
+        data = (json.dumps(shard, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+        source = f"frame-config/{page['id']}.json"
+        shards.append((source, data))
+        index_pages.append({"sourcePageSha256": page["sha256"], "source": source, "sha256": digest(data)})
+    index = {"schemaVersion": 1, "pages": index_pages}
+    script = (INDEX_PREFIX + json.dumps(index, ensure_ascii=False, separators=(",", ":")) + ");\n").encode("utf-8")
+    return index, script, shards
+
+
+def verify_page_index(dist, config, actual_index):
+    expected_index, script, shards = page_outputs(dist, config)
+    require(actual_index == expected_index, "Frame page index paths/source bindings/SHA differ from full config")
+    for source, expected in shards:
+        path = bound_path(dist, source, "frame-config", ".json")
+        data = path.read_bytes()
+        require(digest(data) == digest(expected), f"Page frame shard SHA mismatch: {source}")
+        require(data == expected, f"Page frame shard differs from exact page entries: {source}")
+    return {"frameIndexPages": len(shards), "frameIndexBytes": len(script), "frameShardBytesTotal": sum(len(data) for _, data in shards)}
+
+
+def write_page_index(dist, config):
+    index, script, shards = page_outputs(dist, config)
+    for source, data in shards:
+        atomic_write(bound_path(dist, source, "frame-config", ".json"), data, dist)
+    # Publish the index after all shard files exist and have their final bytes.
+    atomic_write(dist / "frame-sequences.js", script, dist)
+    return verify_page_index(dist, config, index)
+
+
+def load_config(dist, require_index=False):
     json_path, js_path = dist / "frame-sequences.json", dist / "frame-sequences.js"
     require(not json_path.is_symlink() and not js_path.is_symlink(), "Config cannot be a symlink")
     config = json.loads(json_path.read_text(encoding="utf-8-sig"))
     js = js_path.read_text(encoding="utf-8-sig").strip()
-    require(js.startswith(JS_PREFIX) and js.endswith(");"), "Unexpected frame-sequences.js wrapper")
-    require(json.loads(js[len(JS_PREFIX):-2]) == config, "JSON and JS configs disagree")
+    require(js.endswith(");"), "Unexpected frame-sequences.js wrapper")
+    is_index = js.startswith(INDEX_PREFIX)
+    if is_index:
+        actual_index = json.loads(js[len(INDEX_PREFIX):-2])
+    else:
+        require(not require_index and js.startswith(JS_PREFIX), "Expected hash-bound page frame index")
+        require(json.loads(js[len(JS_PREFIX):-2]) == config, "JSON and JS configs disagree")
     require(config.get("schemaVersion") == 1, "Expected existing schemaVersion 1")
     require(isinstance(config.get("entries"), list) and config["entries"], "No sequences")
     panel_ids, sources = set(), set()
@@ -75,6 +145,8 @@ def load_config(dist):
             bound_path(dist, source, "frames", ".webp")
             require(source not in sources, f"Duplicate source frame: {source}")
             sources.add(source)
+    if is_index:
+        verify_page_index(dist, config, actual_index)
     return config
 
 
@@ -91,6 +163,8 @@ def pack_indices(entry, ordinal, streaming=False):
 
 def atomic_write(path, data, dist):
     require(path.is_relative_to(dist) and path.resolve() == path, f"Unsafe output: {path}")
+    if path.is_file() and path.read_bytes() == data:
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     require(path.parent.resolve() == path.parent, f"Symlink output directory: {path.parent}")
     temporary = None
@@ -219,7 +293,9 @@ def main():
     require(not (args.verify and args.replace), "--verify cannot be combined with --replace")
     dist = args.dist.resolve(strict=True)
     require(dist.is_dir() and dist.is_absolute(), "Expected an absolute dist directory")
-    config = load_config(dist)
+    original_config_bytes = (dist / "frame-sequences.json").read_bytes()
+    original_config = json.loads(original_config_bytes.decode("utf-8-sig"))
+    config = load_config(dist, require_index=args.verify and args.streaming)
     original_frames = args.original_frames.resolve(strict=True) if args.original_frames is not None else None
     require(original_frames is None or original_frames.is_dir(), "Expected a retained original frames directory")
     if not args.verify:
@@ -241,14 +317,17 @@ def main():
             generate_entry(dist, entry, recovered, args.streaming)
         # Verify every pack and every available original before config writes/deletion.
         verify(dist, config, original_frames, args.streaming)
-        serialized = json.dumps(config, ensure_ascii=False, indent=2)
-        atomic_write(dist / "frame-sequences.json", (serialized + "\n").encode("utf-8"), dist)
-        atomic_write(dist / "frame-sequences.js", (JS_PREFIX + serialized + ");\n").encode("utf-8"), dist)
-        config = load_config(dist)
+        full_json = original_config_bytes if config == original_config else (json.dumps(config, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+        atomic_write(dist / "frame-sequences.json", full_json, dist)
+        write_page_index(dist, config)
+        config = load_config(dist, require_index=True)
     summary, proofs = verify(dist, config, original_frames, args.streaming)
     summary["removedOriginalFrames"] = remove_verified_sources(dist, proofs) if args.replace else 0
     if args.replace:
         verify(dist, config, original_frames, args.streaming)
+    js = (dist / "frame-sequences.js").read_text(encoding="utf-8-sig").strip()
+    if js.startswith(INDEX_PREFIX):
+        summary.update(verify_page_index(dist, config, json.loads(js[len(INDEX_PREFIX):-2])))
     summary.update(verified=True, streaming=args.streaming, mode="verify" if args.verify else "replace" if args.replace else "generate", dist=str(dist))
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 

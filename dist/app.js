@@ -13,6 +13,7 @@
   const readingPositionKey = 'just-cuz-birthday-episode-content-v2-page';
   $('page-number').max = String(pages.length);
   let current = 1, loaded = false, loadToken = 0, imageLoader = null;
+  let frameConfigController = null;
   let zoom = 1, fitting = true, fitScale = 1, players = [];
   const dialogs = new Map();
   const chapterOf = page => book.chapters.find(ch => page >= ch.start && page <= ch.end);
@@ -173,8 +174,8 @@
   function updatePanelStatus() {
     const hosts = Array.from(panelLayer.querySelectorAll('.panel-host')).filter(host => host.dataset.backgroundOnly !== 'true');
     const caption = $('page-caption'), retry = $('retry-interaction');
-    if (retry) retry.hidden = true;
     if (!loaded || !hosts.length) return;
+    if (retry) retry.hidden = true;
     const ready = hosts.filter(host => host.dataset.interactionState === 'ready').length;
     const failed = hosts.filter(host => host.dataset.interactionState === 'error').length;
     const pendingAngle = hosts.some(host => host.dataset.interactionState === 'ready' && host.dataset.anglePending === 'true');
@@ -248,6 +249,10 @@
     number = Math.trunc(Number(number));
     if (!Number.isFinite(number) || number < 1 || number > pages.length) return;
     current = number; loaded = false; const token = ++loadToken;
+    if (frameConfigController) frameConfigController.abort();
+    frameConfigController = new AbortController();
+    const configSignal = frameConfigController.signal;
+    if (imageLoader) { imageLoader.onload = null; imageLoader.onerror = null; imageLoader.removeAttribute('src'); }
     $('panel-sources-button').hidden = true;
     if ($('panel-sources-dialog').open) $('panel-sources-dialog').close();
     clearPlayers(); image.hidden = true;
@@ -264,18 +269,33 @@
     zoom = 1; fitting = true; sizeStage(); viewport.scrollLeft = 0; viewport.scrollTop = 0;
     const page = pages[current - 1];
     imageLoader = new Image();
+    imageLoader.fetchPriority = 'high'; imageLoader.decoding = 'async';
+    imageLoader.width = page.width; imageLoader.height = page.height;
     imageLoader.onload = () => {
       if (token !== loadToken) return;
       loaded = true; image.src = page.source; image.width = page.width; image.height = page.height;
       image.alt = `Just Cuz 第 ${current} 页完整原画`;
       image.hidden = false; $('page-loading').hidden = true;
-      mountPanels(page);
+      document.dispatchEvent(new CustomEvent('comic-page-original-ready', {detail:{readingPage:current, sourcePage:page.sourcePage, sourcePageSha256:page.sha256}}));
+      $('page-caption').textContent = '正在准备本页互动，原画可以先读';
+      panelLayer.setAttribute('aria-busy', 'true');
+      Promise.resolve().then(() => {
+        if (token !== loadToken || configSignal.aborted) return null;
+        if (!window.ComicPageFrames) throw new Error('Current page frame loader unavailable');
+        return window.ComicPageFrames.ensure(page, configSignal);
+      }).then(config => {
+        if (!config || token !== loadToken || configSignal.aborted) return;
+        mountPanels(page);
+      }).catch(() => {
+        if (token !== loadToken || configSignal.aborted) return;
+        panelLayer.setAttribute('aria-busy', 'false');
+        $('page-caption').dataset.state = 'error';
+        $('page-caption').textContent = '互动暂未打开，原画仍可阅读。请重新准备。';
+        if ($('retry-interaction')) $('retry-interaction').hidden = false;
+      });
       updatePanelSourcesButton(page);
       try { localStorage.setItem(readingPositionKey, String(current)); } catch (_) {}
       try { history.replaceState(null, '', `#page=${current}`); } catch (_) {}
-      for (const adjacent of [current - 1, current + 1]) {
-        if (adjacent >= 1 && adjacent <= pages.length) { const preload = new Image(); preload.src = pages[adjacent - 1].source; }
-      }
     };
     imageLoader.onerror = () => {
       if (token !== loadToken) return;
