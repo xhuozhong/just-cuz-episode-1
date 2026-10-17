@@ -6878,14 +6878,30 @@ window.COMIC_FRAME_INDEX = Object.freeze({"schemaVersion":1,"pages":[{"sourcePag
   }
   function current(store, generation) { return !store.disposed && store.generation === generation; }
   function scheduleProgress(consumer) {
-    if (consumer.disposed || consumer.progressScheduled) return;
+    if (consumer.disposed || typeof consumer.options.onProgress !== 'function') return;
+    const complete = consumer.store.blobs.size === consumer.store.sequence.frameCount;
+    // The initial callback stays asynchronous. Streamed rows then share one
+    // update per animation frame; completion must also work in a hidden tab.
+    if (consumer.progressScheduled) {
+      if (!complete || consumer.progressFrame === null) return;
+      window.cancelAnimationFrame(consumer.progressFrame); consumer.progressFrame = null;
+    }
     consumer.progressScheduled = true;
-    defer(() => {
+    const version = ++consumer.progressVersion;
+    const deliver = () => {
+      if (version !== consumer.progressVersion) return;
+      consumer.progressFrame = null;
       consumer.progressScheduled = false;
       if (!consumer.disposed && !consumer.store.disposed && typeof consumer.options.onProgress === 'function') {
-        consumer.options.onProgress({loaded:consumer.store.blobs.size, total:consumer.store.sequence.frameCount});
+        const loaded = consumer.store.blobs.size;
+        if (loaded !== consumer.progressLoaded) {
+          consumer.progressLoaded = loaded;
+          consumer.options.onProgress({loaded, total:consumer.store.sequence.frameCount});
+        }
       }
-    });
+    };
+    if (consumer.progressLoaded < 0 || complete || typeof window.requestAnimationFrame !== 'function' || typeof window.cancelAnimationFrame !== 'function') defer(deliver);
+    else consumer.progressFrame = window.requestAnimationFrame(deliver);
   }
   function enqueueRequest(store, key, priority, index, pack) {
     const existing = store.requests.get(key);
@@ -7010,8 +7026,11 @@ window.COMIC_FRAME_INDEX = Object.freeze({"schemaVersion":1,"pages":[{"sourcePag
       Promise.resolve().then(() => {
         if (!current(store, generation)) throw new Error('Frame store disposed');
         const init = {signal:request.controller.signal};
-        if (request.pack) init.cache = 'no-cache';
-        return fetch(request.pack ? request.pack.source : store.sequence.frames[request.index], init);
+        // The validated content hash gives revised packets a distinct HTTP
+        // cache key. Both whole-pack and per-frame checks still verify bytes.
+        if (request.pack) init.cache = 'force-cache';
+        const source = request.pack ? `${request.pack.source}?sha256=${request.pack.sha256}` : store.sequence.frames[request.index];
+        return fetch(source, init);
       }).then(response => {
         if (!current(store, generation)) throw new Error('Frame store disposed');
         if (!response.ok) throw new Error(`Frame ${request.pack ? 'pack' : 'image'} HTTP ${response.status}`);
@@ -7170,7 +7189,7 @@ window.COMIC_FRAME_INDEX = Object.freeze({"schemaVersion":1,"pages":[{"sourcePag
       // Compressed images are small and reusable; decode only the requested/nearby frames.
       if (!sequence.packs) for (let index = 0; index < sequence.frameCount; index++) void requestBlob(store, index, 2).catch(() => {});
     }
-    const consumer = {store, canvas, context, options, target:0, actualIndex:-1, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false};
+    const consumer = {store, canvas, context, options, target:0, actualIndex:-1, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false, progressFrame:null, progressVersion:0, progressLoaded:-1};
     store.consumers.add(consumer);
     function setPercent(percent) {
       if (consumer.disposed || !Number.isFinite(Number(percent))) return;
@@ -7190,6 +7209,9 @@ window.COMIC_FRAME_INDEX = Object.freeze({"schemaVersion":1,"pages":[{"sourcePag
     function destroy() {
       if (consumer.disposed) return;
       consumer.disposed = true; consumer.ready = false; store.consumers.delete(consumer);
+      consumer.progressVersion++;
+      if (consumer.progressFrame !== null) window.cancelAnimationFrame(consumer.progressFrame);
+      consumer.progressFrame = null; consumer.progressScheduled = false;
       canvas.width = 0; canvas.height = 0;
       if (!store.consumers.size) disposeStore(store);
     }
@@ -7945,7 +7967,7 @@ window.COMIC_INTERACTION_LAYOUTS = Object.freeze({
       if (config) { cache.delete(key); cache.set(key, config); validate(config, page); }
       else {
         if (!window.crypto || !window.crypto.subtle || typeof window.crypto.subtle.digest !== 'function') throw new Error('Verified frame loading unavailable');
-        const response = await fetch(entry.source, {signal:controller.signal, cache:'no-cache'});
+        const response = await fetch(`${entry.source}?sha256=${entry.sha256.toLowerCase()}`, {signal:controller.signal, cache:'force-cache'});
         assertCurrent();
         if (!response.ok) throw new Error('Page frame config HTTP error');
         const bytes = await response.arrayBuffer(); assertCurrent();
@@ -8239,6 +8261,13 @@ window.COMIC_INTERACTION_LAYOUTS = Object.freeze({
     if (chapter) $('chapter-select').value = chapter.start;
     zoom = 1; fitting = true; sizeStage(); viewport.scrollLeft = 0; viewport.scrollTop = 0;
     const page = pages[current - 1];
+    // The small current-page configuration can travel alongside the high-priority
+    // original image. No player or angle resource starts before the original is visible.
+    const configReady = Promise.resolve().then(() => {
+      if (token !== loadToken || configSignal.aborted) return null;
+      if (!window.ComicPageFrames) throw new Error('Current page frame loader unavailable');
+      return window.ComicPageFrames.ensure(page, configSignal);
+    }).then(config => ({config}), error => ({error}));
     imageLoader = new Image();
     imageLoader.fetchPriority = 'high'; imageLoader.decoding = 'async';
     imageLoader.width = page.width; imageLoader.height = page.height;
@@ -8250,13 +8279,10 @@ window.COMIC_INTERACTION_LAYOUTS = Object.freeze({
       document.dispatchEvent(new CustomEvent('comic-page-original-ready', {detail:{readingPage:current, sourcePage:page.sourcePage, sourcePageSha256:page.sha256}}));
       $('page-caption').textContent = '正在准备本页互动，原画可以先读';
       panelLayer.setAttribute('aria-busy', 'true');
-      Promise.resolve().then(() => {
-        if (token !== loadToken || configSignal.aborted) return null;
-        if (!window.ComicPageFrames) throw new Error('Current page frame loader unavailable');
-        return window.ComicPageFrames.ensure(page, configSignal);
-      }).then(config => {
-        if (!config || token !== loadToken || configSignal.aborted) return;
-        mountPanels(page);
+      configReady.then(result => {
+        if (token !== loadToken || configSignal.aborted) return;
+        if (result.error) throw result.error;
+        if (result.config) mountPanels(page);
       }).catch(() => {
         if (token !== loadToken || configSignal.aborted) return;
         panelLayer.setAttribute('aria-busy', 'false');
@@ -8270,6 +8296,7 @@ window.COMIC_INTERACTION_LAYOUTS = Object.freeze({
     };
     imageLoader.onerror = () => {
       if (token !== loadToken) return;
+      frameConfigController.abort();
       $('page-loading').hidden = true; $('page-error').hidden = false;
       $('page-caption').textContent = '原页尚未打开';
     };
@@ -8319,6 +8346,117 @@ window.COMIC_INTERACTION_LAYOUTS = Object.freeze({
     } catch (_) {}
   }
   showPage(Math.min(pages.length, Math.max(1, first)));
+})();
+
+;
+/* panel-loading.js */
+(() => {
+  'use strict';
+  const layer = document.getElementById('panel-layer');
+  if (!layer || window.ComicPanelLoading) return;
+  const records = new Map(), panels = new Map();
+  let queued = false, destroyed = false;
+  const positive = value => Number.isFinite(value) && value > 0;
+  const validRect = (rect, width, height) => rect && [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)
+    && rect.x >= 0 && rect.y >= 0 && positive(rect.width) && positive(rect.height)
+    && rect.x + rect.width <= width && rect.y + rect.height <= height;
+  for (const page of window.COMIC_BOOK && window.COMIC_BOOK.pages || []) {
+    for (const panel of page.panels || []) {
+      if (!panel || typeof panel.id !== 'string') continue;
+      // Ambiguous IDs cannot safely supply an individual picture's geometry.
+      if (panels.has(panel.id)) panels.set(panel.id, null);
+      else panels.set(panel.id, {page, panel});
+    }
+  }
+  function geometry(host) {
+    const source = panels.get(host.dataset.sourcePanelId);
+    if (!source) return null;
+    const {page, panel} = source, bounds = panel.bounds;
+    if (!positive(page.width) || !positive(page.height) || !validRect(bounds, page.width, page.height)) return null;
+    let rect = {x:0, y:0, width:bounds.width, height:bounds.height};
+    if (host.dataset.interactionRegion || host.dataset.interactionRect) {
+      try { rect = JSON.parse(host.dataset.interactionRect); } catch (_) { return null; }
+      if (!validRect(rect, bounds.width, bounds.height)) return null;
+    }
+    return {left:`${(bounds.x + rect.x + rect.width) / page.width * 100}%`, top:`${(bounds.y + rect.y + rect.height) / page.height * 100}%`};
+  }
+  function videoFraction(video) {
+    if (!video || !positive(video.duration)) return 0;
+    let seconds = 0, lastEnd = 0;
+    try {
+      for (let i = 0; i < video.buffered.length; i++) {
+        const start = Math.max(0, video.buffered.start(i), lastEnd);
+        const end = Math.min(video.duration, video.buffered.end(i));
+        if (Number.isFinite(start) && Number.isFinite(end) && end > start) seconds += end - start;
+        if (Number.isFinite(end)) lastEnd = Math.max(lastEnd, end);
+      }
+    } catch (_) { return 0; }
+    return Math.min(1, seconds / video.duration);
+  }
+  function update(host, record) {
+    const data = host.dataset, loaded = Math.max(0, Number(data.loadedFrames) || 0), total = Number(data.totalFrames);
+    const videoMode = data.renderMode === 'video';
+    // The player's ready state already verifies decode, protection and the full MP4 seek range.
+    const complete = data.interactionState === 'ready' && (videoMode || positive(total) && loaded >= total);
+    let fraction = positive(total) ? loaded / total : 0;
+    if (videoMode && (!loaded || data.frameReady === 'fallback')) fraction = videoFraction(record.video);
+    const percent = complete ? 100 : Math.min(99, Math.max(0, Math.floor(fraction * 100)));
+    const state = data.interactionState === 'error' ? 'error' : complete ? 'ready' : 'loading';
+    const title = (host.getAttribute('aria-label') || '这个画面').split('，')[0];
+    const description = state === 'error' ? `${title}，画面加载 ${percent}%，暂时中断，请重新准备` : `${title}，画面加载 ${percent}%`;
+    if (record.badge.textContent !== `${percent}%`) record.badge.textContent = `${percent}%`;
+    if (record.badge.dataset.state !== state) record.badge.dataset.state = state;
+    if (record.badge.getAttribute('aria-label') !== description) record.badge.setAttribute('aria-label', description);
+    record.badge.title = description;
+    record.badge.hidden = complete;
+  }
+  function remove(record) {
+    if (record.video) for (const event of ['progress', 'loadedmetadata', 'durationchange']) record.video.removeEventListener(event, queue);
+    record.badge.remove();
+  }
+  function sync() {
+    if (destroyed) return;
+    const hosts = new Set(Array.from(layer.querySelectorAll('.panel-host')).filter(host => host.parentNode === layer && host.dataset.backgroundOnly !== 'true'));
+    for (const [host, record] of records) if (!hosts.has(host)) { remove(record); records.delete(host); }
+    for (const host of hosts) {
+      const point = geometry(host);
+      if (!point) { if (records.has(host)) { remove(records.get(host)); records.delete(host); } continue; }
+      let record = records.get(host);
+      if (!record) {
+        const badge = document.createElement('output');
+        badge.className = 'panel-loading-percent';
+        badge.setAttribute('aria-live', 'off');
+        badge.dataset.sourcePanelId = host.dataset.sourcePanelId;
+        if (host.dataset.interactionRegion) badge.dataset.interactionRegion = host.dataset.interactionRegion;
+        const video = host.querySelector('.panel-video');
+        record = {badge, video}; records.set(host, record);
+        if (video) for (const event of ['progress', 'loadedmetadata', 'durationchange']) video.addEventListener(event, queue);
+        // A direct layer child stays visible while the source-bound player has opacity:0 or is clipped.
+        layer.append(badge);
+      }
+      Object.assign(record.badge.style, point);
+      update(host, record);
+    }
+  }
+  function queue() {
+    if (queued || destroyed) return;
+    queued = true;
+    Promise.resolve().then(() => { queued = false; sync(); });
+  }
+  const observer = new MutationObserver(changes => {
+    // Only host insertion/removal schedules work. Our own output nodes cannot cause an observer loop.
+    if (changes.some(change => [...change.addedNodes, ...change.removedNodes].some(node => node.nodeType === 1 && node.classList.contains('panel-host')))) queue();
+  });
+  observer.observe(layer, {childList:true});
+  layer.addEventListener('comic-panel-status', queue);
+  const api = Object.freeze({refresh:queue, destroy() {
+    destroyed = true; observer.disconnect(); layer.removeEventListener('comic-panel-status', queue);
+    for (const record of records.values()) remove(record);
+    records.clear();
+    if (window.ComicPanelLoading === api) delete window.ComicPanelLoading;
+  }});
+  window.ComicPanelLoading = api;
+  queue();
 })();
 
 ;

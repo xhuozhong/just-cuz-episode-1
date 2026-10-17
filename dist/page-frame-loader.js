@@ -89,7 +89,7 @@
       if (config) { cache.delete(key); cache.set(key, config); validate(config, page); }
       else {
         if (!window.crypto || !window.crypto.subtle || typeof window.crypto.subtle.digest !== 'function') throw new Error('Verified frame loading unavailable');
-        const response = await fetch(entry.source, {signal:controller.signal, cache:'no-cache'});
+        const response = await fetch(`${entry.source}?sha256=${entry.sha256.toLowerCase()}`, {signal:controller.signal, cache:'force-cache'});
         assertCurrent();
         if (!response.ok) throw new Error('Page frame config HTTP error');
         const bytes = await response.arrayBuffer(); assertCurrent();

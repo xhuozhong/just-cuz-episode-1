@@ -207,3 +207,21 @@ noscript { display:block; margin:16px; padding:14px; border:2px solid var(--ink)
 #retry-interaction { min-height:30px; padding:4px 9px; font-size:12px; box-shadow:none; white-space:nowrap; }
 
 body.reader-art-ready { background-image:url("ui-assets/storybook-background-v3.webp"); }
+
+/* Per-picture loading percentages; each pill is outside the transparent/clipped player. */
+#panel-layer > .panel-loading-percent {
+  position:absolute; z-index:5; display:inline-flex; align-items:center; gap:4px;
+  transform:translate(calc(-100% - 5px),calc(-100% - 5px));
+  min-width:36px; padding:4px 6px; border:1px solid #927eaa; border-radius:999px;
+  color:#554369; background:#fffaf1f5; box-shadow:0 1px 4px #53426426;
+  font-size:11px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1;
+  white-space:nowrap; pointer-events:none; user-select:none;
+}
+#panel-layer > .panel-loading-percent::before {
+  content:""; flex:none; width:5px; height:5px; border-radius:50%; background:#d897b8;
+}
+#panel-layer > .panel-loading-percent[data-state="error"] { color:#85442f; border-color:#b5755e; background:#fff1e8f5; }
+#panel-layer > .panel-loading-percent[data-state="error"]::before { background:#c57452; }
+@media (max-width:650px) {
+  #panel-layer > .panel-loading-percent { min-width:33px; padding:3px 5px; gap:3px; font-size:10px; transform:translate(calc(-100% - 4px),calc(-100% - 4px)); }
+}

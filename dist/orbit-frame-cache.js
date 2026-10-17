@@ -81,14 +81,30 @@
   }
   function current(store, generation) { return !store.disposed && store.generation === generation; }
   function scheduleProgress(consumer) {
-    if (consumer.disposed || consumer.progressScheduled) return;
+    if (consumer.disposed || typeof consumer.options.onProgress !== 'function') return;
+    const complete = consumer.store.blobs.size === consumer.store.sequence.frameCount;
+    // The initial callback stays asynchronous. Streamed rows then share one
+    // update per animation frame; completion must also work in a hidden tab.
+    if (consumer.progressScheduled) {
+      if (!complete || consumer.progressFrame === null) return;
+      window.cancelAnimationFrame(consumer.progressFrame); consumer.progressFrame = null;
+    }
     consumer.progressScheduled = true;
-    defer(() => {
+    const version = ++consumer.progressVersion;
+    const deliver = () => {
+      if (version !== consumer.progressVersion) return;
+      consumer.progressFrame = null;
       consumer.progressScheduled = false;
       if (!consumer.disposed && !consumer.store.disposed && typeof consumer.options.onProgress === 'function') {
-        consumer.options.onProgress({loaded:consumer.store.blobs.size, total:consumer.store.sequence.frameCount});
+        const loaded = consumer.store.blobs.size;
+        if (loaded !== consumer.progressLoaded) {
+          consumer.progressLoaded = loaded;
+          consumer.options.onProgress({loaded, total:consumer.store.sequence.frameCount});
+        }
       }
-    });
+    };
+    if (consumer.progressLoaded < 0 || complete || typeof window.requestAnimationFrame !== 'function' || typeof window.cancelAnimationFrame !== 'function') defer(deliver);
+    else consumer.progressFrame = window.requestAnimationFrame(deliver);
   }
   function enqueueRequest(store, key, priority, index, pack) {
     const existing = store.requests.get(key);
@@ -213,8 +229,11 @@
       Promise.resolve().then(() => {
         if (!current(store, generation)) throw new Error('Frame store disposed');
         const init = {signal:request.controller.signal};
-        if (request.pack) init.cache = 'no-cache';
-        return fetch(request.pack ? request.pack.source : store.sequence.frames[request.index], init);
+        // The validated content hash gives revised packets a distinct HTTP
+        // cache key. Both whole-pack and per-frame checks still verify bytes.
+        if (request.pack) init.cache = 'force-cache';
+        const source = request.pack ? `${request.pack.source}?sha256=${request.pack.sha256}` : store.sequence.frames[request.index];
+        return fetch(source, init);
       }).then(response => {
         if (!current(store, generation)) throw new Error('Frame store disposed');
         if (!response.ok) throw new Error(`Frame ${request.pack ? 'pack' : 'image'} HTTP ${response.status}`);
@@ -373,7 +392,7 @@
       // Compressed images are small and reusable; decode only the requested/nearby frames.
       if (!sequence.packs) for (let index = 0; index < sequence.frameCount; index++) void requestBlob(store, index, 2).catch(() => {});
     }
-    const consumer = {store, canvas, context, options, target:0, actualIndex:-1, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false};
+    const consumer = {store, canvas, context, options, target:0, actualIndex:-1, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false, progressFrame:null, progressVersion:0, progressLoaded:-1};
     store.consumers.add(consumer);
     function setPercent(percent) {
       if (consumer.disposed || !Number.isFinite(Number(percent))) return;
@@ -393,6 +412,9 @@
     function destroy() {
       if (consumer.disposed) return;
       consumer.disposed = true; consumer.ready = false; store.consumers.delete(consumer);
+      consumer.progressVersion++;
+      if (consumer.progressFrame !== null) window.cancelAnimationFrame(consumer.progressFrame);
+      consumer.progressFrame = null; consumer.progressScheduled = false;
       canvas.width = 0; canvas.height = 0;
       if (!store.consumers.size) disposeStore(store);
     }

@@ -7,7 +7,7 @@ from pathlib import Path
 
 SOURCES = ('manifest.js', 'orbit-seek.js', 'orbit-inertia.js', 'frame-sequences.js',
            'orbit-frame-cache.js', 'interaction-layouts.js', 'panel-player.js',
-           'page-frame-loader.js', 'app.js', 'reader-decor.js', 'music.js')
+           'page-frame-loader.js', 'app.js', 'panel-loading.js', 'reader-decor.js', 'music.js')
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

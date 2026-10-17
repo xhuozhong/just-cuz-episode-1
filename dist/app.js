@@ -268,6 +268,13 @@
     if (chapter) $('chapter-select').value = chapter.start;
     zoom = 1; fitting = true; sizeStage(); viewport.scrollLeft = 0; viewport.scrollTop = 0;
     const page = pages[current - 1];
+    // The small current-page configuration can travel alongside the high-priority
+    // original image. No player or angle resource starts before the original is visible.
+    const configReady = Promise.resolve().then(() => {
+      if (token !== loadToken || configSignal.aborted) return null;
+      if (!window.ComicPageFrames) throw new Error('Current page frame loader unavailable');
+      return window.ComicPageFrames.ensure(page, configSignal);
+    }).then(config => ({config}), error => ({error}));
     imageLoader = new Image();
     imageLoader.fetchPriority = 'high'; imageLoader.decoding = 'async';
     imageLoader.width = page.width; imageLoader.height = page.height;
@@ -279,13 +286,10 @@
       document.dispatchEvent(new CustomEvent('comic-page-original-ready', {detail:{readingPage:current, sourcePage:page.sourcePage, sourcePageSha256:page.sha256}}));
       $('page-caption').textContent = '正在准备本页互动，原画可以先读';
       panelLayer.setAttribute('aria-busy', 'true');
-      Promise.resolve().then(() => {
-        if (token !== loadToken || configSignal.aborted) return null;
-        if (!window.ComicPageFrames) throw new Error('Current page frame loader unavailable');
-        return window.ComicPageFrames.ensure(page, configSignal);
-      }).then(config => {
-        if (!config || token !== loadToken || configSignal.aborted) return;
-        mountPanels(page);
+      configReady.then(result => {
+        if (token !== loadToken || configSignal.aborted) return;
+        if (result.error) throw result.error;
+        if (result.config) mountPanels(page);
       }).catch(() => {
         if (token !== loadToken || configSignal.aborted) return;
         panelLayer.setAttribute('aria-busy', 'false');
@@ -299,6 +303,7 @@
     };
     imageLoader.onerror = () => {
       if (token !== loadToken) return;
+      frameConfigController.abort();
       $('page-loading').hidden = true; $('page-error').hidden = false;
       $('page-caption').textContent = '原页尚未打开';
     };
