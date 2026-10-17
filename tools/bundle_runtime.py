@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 SOURCES = ('manifest.js', 'orbit-seek.js', 'orbit-inertia.js', 'frame-sequences.js',
-           'orbit-frame-cache.js', 'interaction-layouts.js', 'panel-player.js',
+           'orbit-frame-cache.js', 'interaction-layouts.js', 'protection-resources.js', 'panel-player.js',
            'page-frame-loader.js', 'app.js', 'panel-loading.js', 'reader-decor.js', 'music.js')
 
 def main():

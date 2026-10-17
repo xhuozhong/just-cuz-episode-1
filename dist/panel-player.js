@@ -119,6 +119,18 @@
     return regions.map(region => Object.freeze({id:region.id, title:external ? region.title : regionTitles[region.id] || '独立小画面', artworkRect:Object.freeze({...region.artworkRect})}))
       .sort((a, b) => a.artworkRect.y - b.artworkRect.y || a.artworkRect.x - b.artworkRect.x);
   }
+  function protectionSources(panel, page) {
+    const spec = panel.protectionOverlay, assets = window.COMIC_PROTECTION_RESOURCES;
+    if (!spec || !assets || assets.schemaVersion !== 1 || assets.encoding !== 'webp-lossless-exact' || !Array.isArray(assets.entries)) return spec ? [spec.source] : [];
+    const matches = assets.entries.filter(entry => entry && entry.panelId === panel.id);
+    if (matches.length !== 1) return [spec.source];
+    const entry = matches[0];
+    if (entry.sourcePageSha256 !== page.sha256 || entry.mediaSha256 !== panel.actualMedia.sha256 || entry.originalSource !== spec.source || entry.originalSha256 !== spec.sha256
+      || entry.width !== spec.width || entry.height !== spec.height || !SHA.test(entry.sha256 || '') || !SHA.test(entry.rgbaSha256 || '')
+      || typeof entry.source !== 'string' || !/^publication-webp\/[a-z\d][a-z\d._-]*\.webp$/i.test(entry.source)
+      || !(entry.source.endsWith(`-${entry.sha256.slice(0, 12)}.webp`) || entry.source.endsWith(`-${entry.sha256}.webp`))) return [spec.source];
+    return [`${entry.source}?sha256=${entry.sha256}`, spec.source];
+  }
   function createFixedProtectionOverlay(panel, page, layer) {
     if (!sourceBound(panel, page)) return null;
     const spec = panel.protectionOverlay, b = panel.bounds;
@@ -126,9 +138,17 @@
     image.className = 'panel-protection-overlay'; image.alt = ''; image.draggable = false; image.setAttribute('aria-hidden', 'true');
     image.dataset.fixedSourceProtection = panel.id; image.width = spec.width; image.height = spec.height;
     Object.assign(image.style, {inset:'auto', left:`${b.x / page.width * 100}%`, top:`${b.y / page.height * 100}%`, width:`${b.width / page.width * 100}%`, height:`${b.height / page.height * 100}%`, zIndex:'2', opacity:'0'});
-    image.onload = () => { if (image.naturalWidth === spec.width && image.naturalHeight === spec.height) image.style.opacity = '1'; else image.remove(); };
-    image.onerror = () => image.remove(); layer.append(image); image.src = spec.source;
-    return {pause() {}, reset() {}, destroy() { image.onload = null; image.onerror = null; image.remove(); }};
+    const sources = protectionSources(panel, page);
+    let sourceIndex = 0, disposed = false;
+    image.fetchPriority = 'high'; image.decoding = 'async';
+    const unavailable = () => {
+      if (disposed) return;
+      if (++sourceIndex < sources.length) image.src = sources[sourceIndex];
+      else image.remove();
+    };
+    image.onload = () => { if (disposed) return; if (image.naturalWidth === spec.width && image.naturalHeight === spec.height) image.style.opacity = '1'; else unavailable(); };
+    image.onerror = unavailable; layer.append(image); image.src = sources[0];
+    return {pause() {}, reset() {}, destroy() { disposed = true; image.onload = null; image.onerror = null; image.removeAttribute('src'); image.remove(); }};
   }
   function create(panel, page, layer, controlsContainer, options = {}) {
     const backgroundOnly = options.backgroundOnly === true;
@@ -329,20 +349,27 @@
       if (panel.mask && (!window.CSS || !(window.CSS.supports('mask-image', 'url("mask.png")') || window.CSS.supports('-webkit-mask-image', 'url("mask.png")')))) {
         failProtection('当前浏览器无法显示文字保护层，已保留原画。'); return;
       }
-      const source = overlaySpec ? overlaySpec.source : panel.mask;
+      const sources = overlaySpec ? protectionSources(panel, page) : [panel.mask];
+      let sourceIndex = 0;
       const expectedWidth = overlaySpec ? overlaySpec.width : m.width;
       const expectedHeight = overlaySpec ? overlaySpec.height : m.height;
       const protection = overlayImage || new Image(); protectionLoader = protection;
+      protection.fetchPriority = 'high'; protection.decoding = 'async';
+      const unavailable = message => {
+        if (disposed || attempt !== protectionAttempt) return;
+        if (++sourceIndex < sources.length) protection.src = sources[sourceIndex];
+        else failProtection(message);
+      };
       protection.onload = () => {
         if (disposed || attempt !== protectionAttempt) return;
         clearTimeout(protectionTimer);
-        if (protection.naturalWidth !== expectedWidth || protection.naturalHeight !== expectedHeight) { failProtection('保护层与原画不一致，已保留原画。'); return; }
+        if (protection.naturalWidth !== expectedWidth || protection.naturalHeight !== expectedHeight) { unavailable('保护层与原画不一致，已保留原画。'); return; }
         if (overlayImage) overlayImage.hidden = false;
         maskReady = true; updateAvailability();
       };
-      protection.onerror = () => { if (!disposed && attempt === protectionAttempt) failProtection('文字与格框保护层未打开，已保留原画。请重新打开。'); };
+      protection.onerror = () => unavailable('文字与格框保护层未打开，已保留原画。请重新打开。');
       protectionTimer = setTimeout(() => { if (!disposed && attempt === protectionAttempt) loadingSlow('文字与格框保护层仍在加载，原画可继续阅读。'); }, 15000);
-      protection.src = source;
+      protection.src = sources[0];
     }
     function startVideoLoad(force = false) {
       if (disposed || loadFailed || videoStarted && !force) return;
@@ -495,7 +522,7 @@
     let observer = null;
     if ('IntersectionObserver' in window) { observer = new IntersectionObserver(entries => { if (!entries[0].isIntersecting) pause(); }); observer.observe(host); }
     startLoad();
-    return {pause, reset, setBackdropVisible, destroy() { disposed = true; pendingPlay = false; protectionAttempt++; if (motion) motion.destroy(); if (frameRenderer) frameRenderer.destroy(); dragging = null; video.pause(); updateActual(); clearTimeout(timer); clearTimeout(loadTimer); clearTimeout(protectionTimer); if (protectionLoader) { protectionLoader.onload = null; protectionLoader.onerror = null; } if (observer) observer.disconnect(); if (videoStarted) { video.removeAttribute('src'); video.load(); } host.remove(); row.remove(); }};
+    return {pause, reset, setBackdropVisible, destroy() { disposed = true; pendingPlay = false; protectionAttempt++; if (motion) motion.destroy(); if (frameRenderer) frameRenderer.destroy(); dragging = null; video.pause(); updateActual(); clearTimeout(timer); clearTimeout(loadTimer); clearTimeout(protectionTimer); if (protectionLoader) { protectionLoader.onload = null; protectionLoader.onerror = null; protectionLoader.removeAttribute('src'); } if (observer) observer.disconnect(); if (videoStarted) { video.removeAttribute('src'); video.load(); } host.remove(); row.remove(); }};
   }
   window.ComicPanelPlayer = Object.freeze({eligible, displayable, requiresInteractionLayout, interactionRegions, createFixedProtectionOverlay, create});
 })();

@@ -6,6 +6,8 @@
   'use strict';
   const MAX_BITMAPS = 24, MAX_DECODE_PENDING = 4, MAX_FETCH_PENDING = 4;
   const stores = new Map(), lru = new Map();
+  const retained = new Map(), MAX_RETAINED_BYTES = 16 * 1024 * 1024, MAX_RETAINED_STORES = 2;
+  let retainedBytes = 0;
   let serial = 0, decodePending = 0, fetchPending = 0, pumpScheduled = false;
   const defer = callback => Promise.resolve().then(callback);
   const sha = value => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
@@ -367,7 +369,22 @@
       schedulePump();
     });
   }
+  function retainComplete(store) {
+    // Keep only finished, independently verified compressed frames. A fresh
+    // live store owns future callbacks; disposed async work is never revived.
+    if (!store.sequence.packs || store.requests.size || store.errors.size || store.blobs.size !== store.sequence.frameCount) return;
+    const bytes = Array.from(store.blobs.values()).reduce((sum, blob) => sum + blob.size, 0);
+    if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > MAX_RETAINED_BYTES) return;
+    const old = retained.get(store.key);
+    if (old) { retainedBytes -= old.bytes; retained.delete(store.key); }
+    retained.set(store.key, {bytes, blobs:new Map(store.blobs)}); retainedBytes += bytes;
+    while (retained.size > MAX_RETAINED_STORES || retainedBytes > MAX_RETAINED_BYTES) {
+      const key = retained.keys().next().value;
+      retainedBytes -= retained.get(key).bytes; retained.delete(key);
+    }
+  }
   function disposeStore(store) {
+    retainComplete(store);
     store.disposed = true; store.generation++;
     if (stores.get(store.key) === store) stores.delete(store.key);
     for (const [key, entry] of lru) if (entry.store === store) { entry.bitmap.close(); lru.delete(key); }
@@ -394,16 +411,18 @@
     const key = JSON.stringify([sequence.mediaSha256, sequence.videoSource, sequence.frameCount, sequence.sourceWidth, sequence.sourceHeight, sequence.width, sequence.height, sequence.duration, sequence.frames, sequence.packs]);
     let store = stores.get(key);
     if (!store) {
+      const warm = retained.get(key);
+      if (warm) { retained.delete(key); retainedBytes -= warm.bytes; }
       const packByIndex = sequence.packs ? new Array(sequence.frameCount) : null;
       if (packByIndex) for (const pack of sequence.packs) for (const index of pack.indices) packByIndex[index] = pack;
-      store = {key, id:++serial, sequence, packByIndex, subtle:sequence.packs ? window.crypto.subtle : null, generation:0, disposed:false, consumers:new Set(), blobs:new Map(), frameWaiters:new Map(), requests:new Map(), pending:new Set(), errors:new Map()};
+      store = {key, id:++serial, sequence, packByIndex, subtle:sequence.packs ? window.crypto.subtle : null, generation:0, disposed:false, consumers:new Set(), blobs:warm ? new Map(warm.blobs) : new Map(), frameWaiters:new Map(), requests:new Map(), pending:new Set(), errors:new Map()};
       stores.set(key, store);
       // Compressed images are small and reusable; decode only the requested/nearby frames.
       if (sequence.packs) {
         // Demand and its neighbors do not necessarily touch every interleaved
         // pack (for example 162 frames only touches three of the four packs).
         // Queue complete coverage once; live demand below promotes its own work.
-        for (const pack of sequence.packs) void enqueueRequest(store, pack.source, 2, pack.indices[0], pack).catch(() => {});
+        for (const pack of sequence.packs) if (!pack.indices.every(index => store.blobs.has(index))) void enqueueRequest(store, pack.source, 2, pack.indices[0], pack).catch(() => {});
       } else for (let index = 0; index < sequence.frameCount; index++) void requestBlob(store, index, 2).catch(() => {});
     }
     const consumer = {store, canvas, context, options, target:0, actualIndex:-1, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false, progressFrame:null, progressVersion:0, progressLoaded:-1, progressFailed:-1};
