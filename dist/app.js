@@ -169,6 +169,33 @@
   $('fit-page').addEventListener('click', () => setZoom(1, true));
   new ResizeObserver(() => sizeStage()).observe(viewport);
 
+  let panelStatusQueued = false;
+  function updatePanelStatus() {
+    const hosts = Array.from(panelLayer.querySelectorAll('.panel-host')).filter(host => host.dataset.backgroundOnly !== 'true');
+    const caption = $('page-caption'), retry = $('retry-interaction');
+    if (retry) retry.hidden = true;
+    if (!loaded || !hosts.length) return;
+    const ready = hosts.filter(host => host.dataset.interactionState === 'ready').length;
+    const failed = hosts.filter(host => host.dataset.interactionState === 'error').length;
+    const pendingAngle = hosts.some(host => host.dataset.anglePending === 'true');
+    const warming = hosts.some(host => host.dataset.renderMode === 'frames' && Number(host.dataset.totalFrames) > Number(host.dataset.loadedFrames || 0));
+    panelLayer.setAttribute('aria-busy', String(ready + failed < hosts.length));
+    caption.dataset.state = failed ? 'error' : ready === hosts.length && !pendingAngle ? 'ready' : 'loading';
+    if (failed) {
+      caption.textContent = ready ? `${ready} 个画面可以拖动，其他画面请重新准备` : '互动暂未打开，原画仍可阅读';
+      if (retry) retry.hidden = false;
+    } else if (pendingAngle) caption.textContent = '正在打开这个角度…';
+    else if (ready === hosts.length) caption.textContent = warming ? '可以拖动 · 其他角度继续准备' : '可以拖动 · 双击还原原画';
+    else caption.textContent = ready ? `${ready} 个画面可以拖动，其余正在准备…` : '正在准备环绕画面，原画可以先读';
+  }
+  function queuePanelStatus() {
+    if (panelStatusQueued) return;
+    panelStatusQueued = true;
+    Promise.resolve().then(() => { panelStatusQueued = false; updatePanelStatus(); });
+  }
+  panelLayer.addEventListener('comic-panel-status', queuePanelStatus);
+  if ($('retry-interaction')) $('retry-interaction').addEventListener('click', () => showPage(current));
+
   function clearPlayers() {
     players.forEach(player => player.destroy()); players = []; panelLayer.replaceChildren(); panelControls.replaceChildren(); panelControls.hidden = true;
     $('reset-panels').hidden = true;
@@ -213,6 +240,7 @@
     const done = candidatePanels.filter(p => p.quality === 'passed').length;
     const pendingPanel = candidatePanels.find(panel => !window.ComicPanelPlayer.displayable(panel, page));
     $('page-caption').textContent = interactionCount ? '拖动单格 · 双击还原视角' : pendingPanel && pendingPanel.pendingReason || '原画完整呈现';
+    queuePanelStatus();
   }
   $('reset-panels').addEventListener('click', () => players.forEach(player => player.reset()));
 
@@ -227,6 +255,8 @@
     $('page-number').value = current;
     $('current-page-label').textContent = `第 ${current} 页`;
     $('page-caption').textContent = '正在打开原页…';
+    $('page-caption').dataset.state = 'loading';
+    if ($('retry-interaction')) $('retry-interaction').hidden = true;
     $('page-progress').textContent = `第 ${current} / ${pages.length} 页`;
     $('prev-page').disabled = current <= 1; $('next-page').disabled = current >= pages.length;
     const chapter = chapterOf(current);

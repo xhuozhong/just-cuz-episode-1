@@ -6,19 +6,19 @@
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#d7f2fa">
   <title>Just Cuz · 第一集：生日派对</title>
-  <link rel="stylesheet" href="styles.css">
-  <script defer src="manifest.js"></script>
-  <script defer src="orbit-seek.js"></script>
-  <script defer src="orbit-inertia.js"></script>
-  <script defer src="frame-sequences.js"></script>
-  <script defer src="orbit-frame-cache.js"></script>
-  <script defer src="interaction-layouts.js"></script>
-  <script defer src="panel-player.js"></script>
-  <script defer src="app.js"></script>
-  <script defer src="music.js"></script>
+  <link rel="stylesheet" href="styles.css?v=ready2">
+  <script defer src="manifest.js?v=ready2"></script>
+  <script defer src="orbit-seek.js?v=ready2"></script>
+  <script defer src="orbit-inertia.js?v=ready2"></script>
+  <script defer src="frame-sequences.js?v=ready2"></script>
+  <script defer src="orbit-frame-cache.js?v=ready2"></script>
+  <script defer src="interaction-layouts.js?v=ready2"></script>
+  <script defer src="panel-player.js?v=ready2"></script>
+  <script defer src="app.js?v=ready2"></script>
+  <script defer src="music.js?v=ready2"></script>
 </head>
 <body>
-  <audio id="background-music" preload="auto" loop src="audio/episode-01-background.mp3"></audio>
+  <audio id="background-music" preload="none" loop src="audio/episode-01-background.mp3"></audio>
   <div class="book-shell">
     <header class="book-header">
       <div class="brand-lockup">
@@ -58,7 +58,7 @@
 
     <main>
       <section class="reader" aria-label="完整漫画页">
-        <div class="reader-topline"><strong id="current-page-label">第 1 页</strong><span id="page-caption">原画完整呈现</span></div>
+        <div class="reader-topline"><strong id="current-page-label">第 1 页</strong><span id="page-caption" role="status" aria-live="polite" data-state="loading">正在打开漫画…</span><button id="retry-interaction" type="button" hidden>重新准备</button></div>
         <div id="page-viewport" class="page-viewport" tabindex="0" aria-label="漫画阅读区，可放大后滚动查看">
           <div id="viewport-inner" class="viewport-inner">
             <div id="page-stage" class="page-stage">

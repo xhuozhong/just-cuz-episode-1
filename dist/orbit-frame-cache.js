@@ -30,7 +30,26 @@
       || Math.abs((entry.width / entry.height) / (media.width / media.height) - 1) > .003
       || !Array.isArray(entry.frames) || entry.frames.length !== entry.frameCount
       || !entry.frames.every(file => relative(file) && /\.(?:jpe?g|webp)$/i.test(file))) return null;
-    return Object.freeze({...entry, frames:Object.freeze(entry.frames.slice())});
+    let packs;
+    if (entry.packs !== undefined) {
+      if (!Array.isArray(entry.packs) || !entry.packs.length) return null;
+      const sources = new Set(), covered = new Set();
+      packs = [];
+      for (const pack of entry.packs) {
+        if (!pack || !relative(pack.source) || /[:\u0000-\u0020\u007f]/.test(pack.source) || !/\.orbf$/i.test(pack.source) || !sha(pack.sha256)
+          || !Number.isSafeInteger(pack.byteLength) || !Array.isArray(pack.indices) || !pack.indices.length
+          || pack.byteLength < 12 + pack.indices.length * 8 || sources.has(pack.source)) return null;
+        sources.add(pack.source);
+        for (const index of pack.indices) {
+          if (!Number.isSafeInteger(index) || index < 0 || index >= entry.frameCount || covered.has(index)) return null;
+          covered.add(index);
+        }
+        packs.push(Object.freeze({source:pack.source, sha256:pack.sha256.toLowerCase(), byteLength:pack.byteLength, indices:Object.freeze(pack.indices.slice())}));
+      }
+      if (covered.size !== entry.frameCount) return null;
+      packs = Object.freeze(packs);
+    }
+    return Object.freeze({...entry, frames:Object.freeze(entry.frames.slice()), packs});
   }
   const keyFor = (store, index) => `${store.id}:${index}`;
   function peek(store, index) {
@@ -51,17 +70,56 @@
     defer(() => { pumpScheduled = false; pumpDecodes(); pumpFetches(); });
   }
   function current(store, generation) { return !store.disposed && store.generation === generation; }
+  function scheduleProgress(consumer) {
+    if (consumer.disposed || consumer.progressScheduled) return;
+    consumer.progressScheduled = true;
+    defer(() => {
+      consumer.progressScheduled = false;
+      if (!consumer.disposed && !consumer.store.disposed && typeof consumer.options.onProgress === 'function') {
+        consumer.options.onProgress({loaded:consumer.store.blobs.size, total:consumer.store.sequence.frameCount});
+      }
+    });
+  }
+  function enqueueRequest(store, key, priority, index, pack) {
+    const existing = store.requests.get(key);
+    if (existing) { existing.priority = Math.min(existing.priority, priority); return existing.promise; }
+    let resolve, reject;
+    const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; });
+    const request = {key, index, pack, priority, promise, resolve, reject, started:false, controller:null};
+    store.requests.set(key, request); schedulePump();
+    return promise;
+  }
   function requestBlob(store, index, priority) {
     if (store.disposed) return Promise.reject(new Error('Frame store disposed'));
     if (store.blobs.has(index)) return Promise.resolve(store.blobs.get(index));
     if (store.errors.has(index)) return Promise.reject(store.errors.get(index));
-    const existing = store.requests.get(index);
-    if (existing) { existing.priority = Math.min(existing.priority, priority); return existing.promise; }
-    let resolve, reject;
-    const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; });
-    const request = {index, priority, promise, resolve, reject, started:false, controller:null};
-    store.requests.set(index, request); schedulePump();
-    return promise;
+    const pack = store.packByIndex && store.packByIndex[index];
+    return enqueueRequest(store, pack ? pack.source : index, priority, index, pack).then(() => {
+      if (store.disposed || !store.blobs.has(index)) throw new Error('Frame store disposed');
+      return store.blobs.get(index);
+    });
+  }
+  async function unpack(store, pack, buffer) {
+    if (buffer.byteLength !== pack.byteLength) throw new Error('Frame pack byte length mismatch');
+    const digest = await store.subtle.digest('SHA-256', buffer);
+    const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+    if (hash !== pack.sha256) throw new Error('Frame pack SHA-256 mismatch');
+    const bytes = new Uint8Array(buffer), view = new DataView(buffer);
+    if (bytes.length < 12 || 'ORBF0001'.split('').some((char, index) => bytes[index] !== char.charCodeAt(0))) throw new Error('Invalid frame pack magic');
+    const count = view.getUint32(8, true);
+    if (count !== pack.indices.length || 12 + count * 8 > bytes.length) throw new Error('Invalid frame pack table count');
+    let offset = 12 + count * 8;
+    const rows = [];
+    for (let row = 0; row < count; row++) {
+      const index = view.getUint32(12 + row * 8, true), length = view.getUint32(16 + row * 8, true);
+      if (index !== pack.indices[row] || length < 12 || offset + length > bytes.length) throw new Error('Invalid frame pack table row');
+      if (bytes[offset] !== 82 || bytes[offset + 1] !== 73 || bytes[offset + 2] !== 70 || bytes[offset + 3] !== 70
+        || bytes[offset + 8] !== 87 || bytes[offset + 9] !== 69 || bytes[offset + 10] !== 66 || bytes[offset + 11] !== 80
+        || view.getUint32(offset + 4, true) + 8 !== length) throw new Error('Invalid frame pack WebP payload');
+      rows.push({index, offset, length}); offset += length;
+    }
+    if (offset !== bytes.length) throw new Error('Trailing frame pack bytes');
+    return rows.map(row => [row.index, new Blob([new Uint8Array(buffer, row.offset, row.length)], {type:'image/webp'})]);
   }
   function nextFetch() {
     let choice = null;
@@ -80,19 +138,28 @@
       request.started = true; request.controller = new AbortController(); fetchPending++;
       Promise.resolve().then(() => {
         if (!current(store, generation)) throw new Error('Frame store disposed');
-        return fetch(store.sequence.frames[request.index], {signal:request.controller.signal});
+        return fetch(request.pack ? request.pack.source : store.sequence.frames[request.index], {signal:request.controller.signal});
       }).then(response => {
-        if (!response.ok) throw new Error(`Frame image HTTP ${response.status}`);
-        return response.blob();
-      }).then(blob => {
+        if (!response.ok) throw new Error(`Frame ${request.pack ? 'pack' : 'image'} HTTP ${response.status}`);
+        return request.pack ? response.arrayBuffer().then(buffer => unpack(store, request.pack, buffer)) : response.blob();
+      }).then(result => {
         if (!current(store, generation)) throw new Error('Frame store disposed');
-        if (!blob || blob.size === 0) throw new Error('Frame image is empty');
-        store.blobs.set(request.index, blob); request.resolve(blob);
+        if (request.pack) {
+          for (const [index, blob] of result) store.blobs.set(index, blob);
+        } else {
+          if (!result || result.size === 0) throw new Error('Frame image is empty');
+          store.blobs.set(request.index, result);
+        }
+        request.resolve();
+        for (const consumer of store.consumers) scheduleProgress(consumer);
       }).catch(error => {
-        if (current(store, generation)) store.errors.set(request.index, error);
+        if (current(store, generation)) {
+          for (const index of request.pack ? request.pack.indices : [request.index]) store.errors.set(index, error);
+          for (const consumer of store.consumers) if (store.errors.has(consumer.target)) scheduleRender(consumer);
+        }
         request.reject(error);
       }).finally(() => {
-        if (store.requests.get(request.index) === request) store.requests.delete(request.index);
+        if (store.requests.get(request.key) === request) store.requests.delete(request.key);
         fetchPending--; schedulePump();
       });
     }
@@ -101,6 +168,11 @@
     const count = consumer.store.sequence.frameCount, index = consumer.target;
     const offsets = consumer.direction ? [1,2,3,4].map(step => step * consumer.direction) : [-1,1,-2,2];
     return [...new Set(offsets.map(offset => ((index + offset) % count + count) % count))].filter(value => value !== index);
+  }
+  function requestDemand(consumer) {
+    if (!consumer.store.sequence.packs) return;
+    void requestBlob(consumer.store, consumer.target, 0).catch(() => {});
+    for (const index of neighbors(consumer)) void requestBlob(consumer.store, index, 1).catch(() => {});
   }
   function nextDecode() {
     // Derive demand from live consumers instead of accumulating stale seek promises.
@@ -191,22 +263,25 @@
   }
   function create(panel, page, options = {}) {
     const sequence = boundSequence(panel, page);
-    if (!sequence || typeof fetch !== 'function' || typeof createImageBitmap !== 'function' || typeof AbortController !== 'function') return null;
+    if (!sequence || typeof fetch !== 'function' || typeof createImageBitmap !== 'function' || typeof AbortController !== 'function'
+      || (sequence.packs && (!window.crypto || !window.crypto.subtle || typeof window.crypto.subtle.digest !== 'function'))) return null;
     let canvas, context;
     try { canvas = document.createElement('canvas'); context = canvas.getContext('2d'); }
     catch (_) { return null; }
     if (!context) return null;
     canvas.width = sequence.width; canvas.height = sequence.height;
     canvas.setAttribute('aria-hidden', 'true');
-    const key = JSON.stringify([sequence.mediaSha256, sequence.videoSource, sequence.frameCount, sequence.sourceWidth, sequence.sourceHeight, sequence.width, sequence.height, sequence.duration, sequence.frames]);
+    const key = JSON.stringify([sequence.mediaSha256, sequence.videoSource, sequence.frameCount, sequence.sourceWidth, sequence.sourceHeight, sequence.width, sequence.height, sequence.duration, sequence.frames, sequence.packs]);
     let store = stores.get(key);
     if (!store) {
-      store = {key, id:++serial, sequence, generation:0, disposed:false, consumers:new Set(), blobs:new Map(), requests:new Map(), pending:new Set(), errors:new Map()};
+      const packByIndex = sequence.packs ? new Array(sequence.frameCount) : null;
+      if (packByIndex) for (const pack of sequence.packs) for (const index of pack.indices) packByIndex[index] = pack;
+      store = {key, id:++serial, sequence, packByIndex, subtle:sequence.packs ? window.crypto.subtle : null, generation:0, disposed:false, consumers:new Set(), blobs:new Map(), requests:new Map(), pending:new Set(), errors:new Map()};
       stores.set(key, store);
       // Compressed images are small and reusable; decode only the requested/nearby frames.
-      for (let index = 0; index < sequence.frameCount; index++) void requestBlob(store, index, 2).catch(() => {});
+      if (!sequence.packs) for (let index = 0; index < sequence.frameCount; index++) void requestBlob(store, index, 2).catch(() => {});
     }
-    const consumer = {store, canvas, context, options, target:0, actualIndex:-1, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false};
+    const consumer = {store, canvas, context, options, target:0, actualIndex:-1, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false};
     store.consumers.add(consumer);
     function setPercent(percent) {
       if (consumer.disposed || !Number.isFinite(Number(percent))) return;
@@ -216,7 +291,7 @@
         if (Math.abs(delta) > sequence.frameCount / 2) delta += delta > 0 ? -sequence.frameCount : sequence.frameCount;
         consumer.direction = Math.sign(delta); consumer.target = next; consumer.version++; consumer.prefetched.clear();
       }
-      scheduleRender(consumer); schedulePump();
+      requestDemand(consumer); scheduleRender(consumer); schedulePump();
     }
     function reset() {
       if (consumer.disposed) return;
@@ -230,7 +305,7 @@
       if (!store.consumers.size) disposeStore(store);
     }
     // Includes cache hits: no callback can run until the caller has assigned its handle.
-    scheduleRender(consumer); schedulePump();
+    scheduleProgress(consumer); requestDemand(consumer); scheduleRender(consumer); schedulePump();
     return Object.freeze({canvas, setPercent, reset, destroy,
       get currentTime() { return consumer.actualIndex < 0 ? 0 : consumer.actualIndex / sequence.frameCount * sequence.duration; },
       get index() { return consumer.actualIndex; }, get ready() { return consumer.ready; }});

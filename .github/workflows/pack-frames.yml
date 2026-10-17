@@ -1,0 +1,38 @@
+name: Pack existing frame cache
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pack-existing-frame-cache
+  cancel-in-progress: false
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          token: ${{ github.token }}
+      - name: Pack and compare every original frame
+        run: python3 tools/pack_frames.py --replace
+      - name: Verify committed config and remaining pack bytes
+        run: python3 tools/pack_frames.py --verify
+      - name: Commit only frame packages and their source config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- dist/frames dist/frame-packs dist/frame-sequences.json dist/frame-sequences.js
+          if git diff --cached --quiet; then
+            echo "Frame packages are already current."
+            exit 0
+          fi
+          git commit -m "Package original WebP frames into interleaved binary caches"
+          git push origin HEAD:main
+      # GITHUB_TOKEN pushes do not start the Pages workflow. Dispatch Pages
+      # manually only after reviewing this generated commit and its validation.

@@ -198,3 +198,10 @@ noscript { display:block; margin:16px; padding:14px; border:2px solid var(--ink)
 .panel-controls[data-quality="review-candidate"], .panel-controls[data-quality="reused-await-runtime"] {border-left:4px solid #be8a28;}
 .pending-panel {color:#5a5e67; background:#f6f7f9;}
 .panel-frame-canvas[hidden] { display: none !important; }
+
+/* Readiness is a small text hint; the original artwork stays unobstructed. */
+.reader-topline #page-caption { min-width:0; text-align:right; line-height:1.5; }
+#page-caption[data-state="loading"] { color:#806323; }
+#page-caption[data-state="ready"] { color:#28684c; }
+#page-caption[data-state="error"] { color:#975038; }
+#retry-interaction { min-height:30px; padding:4px 9px; font-size:12px; box-shadow:none; white-space:nowrap; }
