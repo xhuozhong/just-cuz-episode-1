@@ -63,9 +63,36 @@
     }
     return Object.freeze({...entry, frames:Object.freeze(entry.frames.slice()), packs});
   }
-  const keyFor = (store, index) => `${store.id}:${index}`;
-  function peek(store, index) {
-    const key = keyFor(store, index), entry = lru.get(key);
+  function boundPreview(panel, page, sequence) {
+    const config = window.COMIC_PREVIEW_SEQUENCES;
+    if (!sequence.packs || !config || config.schemaVersion !== 1 || !Array.isArray(config.entries)) return null;
+    const matches = config.entries.filter(entry => entry && entry.panelId === panel.id);
+    if (matches.length !== 1) return null;
+    const entry = matches[0], pack = entry.pack;
+    if (entry.sourcePageSha256 !== page.sha256 || entry.mediaSha256 !== sequence.mediaSha256
+      || entry.videoSource !== sequence.videoSource || entry.frameCount !== sequence.frameCount
+      || entry.sourceWidth !== sequence.sourceWidth || entry.sourceHeight !== sequence.sourceHeight || entry.duration !== sequence.duration
+      || !Number.isSafeInteger(entry.width) || entry.width < 1 || entry.width > sequence.width
+      || !Number.isSafeInteger(entry.height) || entry.height < 1 || entry.height > sequence.height
+      || Math.max(entry.width, entry.height) > 480 || Math.abs((entry.width / entry.height) / (sequence.width / sequence.height) - 1) > .006
+      || !Array.isArray(entry.indices) || ![24,32].includes(entry.indices.length) || new Set(entry.indices).size !== entry.indices.length
+      || !entry.indices.every(index => Number.isSafeInteger(index) && index >= 0 && index < sequence.frameCount)
+      || !Array.from({length:entry.indices.length}, (_, index) => Math.floor(index * sequence.frameCount / entry.indices.length + .5) % sequence.frameCount).every(index => entry.indices.includes(index))
+      || !pack || !relative(pack.source) || /[:\u0000-\u0020\u007f]/.test(pack.source) || !/^preview-packs\/.+\.orbf$/i.test(pack.source)
+      || !sha(pack.sha256) || !Number.isSafeInteger(pack.byteLength) || !Array.isArray(pack.indices)
+      || pack.indices.length !== entry.indices.length || !pack.indices.every((index, row) => index === entry.indices[row])
+      || !Array.isArray(pack.frameBytes) || !Array.isArray(pack.frameSha256)
+      || pack.frameBytes.length !== pack.indices.length || pack.frameSha256.length !== pack.indices.length
+      || !pack.frameBytes.every(length => Number.isSafeInteger(length) && length >= 12 && length <= 0xffffffff) || !pack.frameSha256.every(sha)
+      || pack.frameBytes.reduce((sum, length) => sum + length, 12 + pack.indices.length * 8) !== pack.byteLength) return null;
+    const indices = Object.freeze(entry.indices.slice());
+    return Object.freeze({...entry, indices, pack:Object.freeze({...pack, indices,
+      sha256:pack.sha256.toLowerCase(), frameBytes:Object.freeze(pack.frameBytes.slice()), frameSha256:Object.freeze(pack.frameSha256.map(hash => hash.toLowerCase()))})});
+  }
+  const keyFor = (store, index, preview = false) => `${store.id}:${preview ? 'p:' : ''}${index}`;
+  const pendingKey = (index, preview = false) => preview ? `p:${index}` : index;
+  function peek(store, index, preview = false) {
+    const key = keyFor(store, index, preview), entry = lru.get(key);
     if (!entry) return null;
     lru.delete(key); lru.set(key, entry);
     return entry.bitmap;
@@ -82,10 +109,36 @@
     defer(() => { pumpScheduled = false; pumpDecodes(); pumpFetches(); });
   }
   function current(store, generation) { return !store.disposed && store.generation === generation; }
+  function clearPreviewIdle(request) {
+    if (request.previewTimer != null && typeof clearTimeout === 'function') clearTimeout(request.previewTimer);
+    request.previewTimer = null;
+    request.previewTimerVersion = (request.previewTimerVersion || 0) + 1;
+  }
+  function armPreviewIdle(store, request, generation) {
+    if (!request.preview || request.previewIdleTimeout || !current(store, generation)
+      || store.preview.finished || store.preview.failed || typeof setTimeout !== 'function' || typeof clearTimeout !== 'function') return;
+    clearPreviewIdle(request);
+    const version = request.previewTimerVersion;
+    request.previewTimer = setTimeout(() => {
+      if (version !== request.previewTimerVersion || !current(store, generation) || store.preview.finished || store.preview.failed) return;
+      request.previewTimer = null; request.previewIdleTimeout = true; store.preview.failed = true;
+      // Only a real stalled response disables a mirror. User/page aborts never do.
+      if (request.deliveryResponse && window.ComicAssetDelivery && typeof window.ComicAssetDelivery.markFailed === 'function') window.ComicAssetDelivery.markFailed(request.deliveryResponse);
+      const error = new Error('Preview body stalled for eight seconds');
+      for (const index of request.pack.indices) if (!store.preview.blobs.has(index)) store.preview.errors.set(index, error);
+      for (const consumer of store.consumers) scheduleProgress(consumer);
+      request.controller.abort();
+      if (request.reader) { try { void Promise.resolve(request.reader.cancel()).catch(() => {}); } catch (_) {} }
+      schedulePump();
+    }, 8000);
+  }
   function scheduleProgress(consumer) {
     if (consumer.disposed || typeof consumer.options.onProgress !== 'function') return;
+    const preview = consumer.store.preview, previewLoaded = preview ? preview.blobs.size : 0;
+    const previewFailed = preview ? Math.max(preview.errors.size, preview.failed ? 1 : 0) : 0;
     const complete = consumer.store.blobs.size === consumer.store.sequence.frameCount;
-    const urgent = complete || consumer.store.errors.size > consumer.progressFailed;
+    const urgent = complete || preview && previewLoaded === preview.spec.indices.length && previewLoaded !== consumer.previewProgressLoaded
+      || consumer.store.errors.size > consumer.progressFailed || previewFailed > consumer.previewProgressFailed;
     // The initial callback stays asynchronous. Streamed rows then share one
     // update per animation frame; completion must also work in a hidden tab.
     if (consumer.progressScheduled) {
@@ -99,23 +152,26 @@
       consumer.progressFrame = null;
       consumer.progressScheduled = false;
       if (!consumer.disposed && !consumer.store.disposed && typeof consumer.options.onProgress === 'function') {
-        const loaded = consumer.store.blobs.size, failed = consumer.store.errors.size;
-        if (loaded !== consumer.progressLoaded || failed !== consumer.progressFailed) {
+        const preview = consumer.store.preview, loaded = consumer.store.blobs.size, failed = consumer.store.errors.size;
+        const previewLoaded = preview ? preview.blobs.size : 0, previewTotal = preview ? preview.spec.indices.length : 0;
+        const previewFailed = preview ? Math.max(preview.errors.size, preview.failed ? 1 : 0) : 0;
+        if (loaded !== consumer.progressLoaded || failed !== consumer.progressFailed || previewLoaded !== consumer.previewProgressLoaded || previewFailed !== consumer.previewProgressFailed) {
           consumer.progressLoaded = loaded;
           consumer.progressFailed = failed;
-          consumer.options.onProgress({loaded, failed, total:consumer.store.sequence.frameCount});
+          consumer.previewProgressLoaded = previewLoaded; consumer.previewProgressFailed = previewFailed;
+          consumer.options.onProgress({loaded, failed, total:consumer.store.sequence.frameCount, previewLoaded, previewTotal, previewFailed});
         }
       }
     };
     if (consumer.progressLoaded < 0 || urgent || typeof window.requestAnimationFrame !== 'function' || typeof window.cancelAnimationFrame !== 'function') defer(deliver);
     else consumer.progressFrame = window.requestAnimationFrame(deliver);
   }
-  function enqueueRequest(store, key, priority, index, pack) {
+  function enqueueRequest(store, key, priority, index, pack, preview = false) {
     const existing = store.requests.get(key);
     if (existing) { existing.priority = Math.min(existing.priority, priority); return existing.promise; }
     let resolve, reject;
     const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; });
-    const request = {key, index, pack, priority, promise, resolve, reject, started:false, controller:null};
+    const request = {key, index, pack, preview, priority, promise, resolve, reject, started:false, controller:null};
     store.requests.set(key, request); schedulePump();
     return promise;
   }
@@ -148,12 +204,15 @@
     return bytes.length >= 12 && bytes[0] === 82 && bytes[1] === 73 && bytes[2] === 70 && bytes[3] === 70
       && bytes[8] === 87 && bytes[9] === 69 && bytes[10] === 66 && bytes[11] === 80 && view.getUint32(4, true) + 8 === bytes.length;
   }
-  function publishBlob(store, index, blob, generation) {
+  function publishBlob(store, index, blob, generation, preview = false) {
     if (!current(store, generation)) throw new Error('Frame store disposed');
-    store.blobs.set(index, blob);
-    const waiter = store.frameWaiters.get(index);
+    (preview ? store.preview.blobs : store.blobs).set(index, blob);
+    const waiter = !preview && store.frameWaiters.get(index);
     if (waiter) { store.frameWaiters.delete(index); waiter.resolve(blob); }
-    for (const consumer of store.consumers) scheduleProgress(consumer);
+    for (const consumer of store.consumers) {
+      scheduleProgress(consumer);
+      if (preview || consumer.target === index) scheduleRender(consumer);
+    }
     schedulePump();
   }
   function packTable(pack, bytes) {
@@ -189,12 +248,15 @@
     const tableLength = 12 + pack.indices.length * 8;
     let received = 0, rows = null, next = 0, complete = false;
     request.reader = reader;
+    armPreviewIdle(store, request, generation);
     try {
       for (;;) {
         const chunk = await reader.read();
         if (!current(store, generation)) throw new Error('Frame store disposed');
+        if (request.previewIdleTimeout) throw new Error('Preview body stalled for eight seconds');
         if (chunk.done) break;
         if (!(chunk.value instanceof Uint8Array) || received + chunk.value.byteLength > pack.byteLength) throw new Error('Frame pack byte length mismatch');
+        if (chunk.value.byteLength) armPreviewIdle(store, request, generation);
         bytes.set(chunk.value, received); received += chunk.value.byteLength;
         // The entire table is bound before even the first payload is published.
         if (!rows && received >= tableLength) rows = packTable(pack, bytes.subarray(0, received));
@@ -202,7 +264,7 @@
           const row = rows[next], payload = bytes.subarray(row.offset, row.offset + row.length);
           if (!webpPayload(payload)) throw new Error('Invalid frame pack WebP payload');
           if (await digest(store, payload) !== pack.frameSha256[next]) throw new Error('Frame payload SHA-256 mismatch');
-          publishBlob(store, row.index, new Blob([payload], {type:'image/webp'}), generation); next++;
+          publishBlob(store, row.index, new Blob([payload], {type:'image/webp'}), generation, request.preview); next++;
         }
       }
       if (received !== pack.byteLength || !rows || next !== rows.length) throw new Error('Truncated frame pack');
@@ -210,6 +272,7 @@
       if (!current(store, generation)) throw new Error('Frame store disposed');
       complete = true;
     } finally {
+      clearPreviewIdle(request);
       request.reader = null;
       if (!complete) { try { void Promise.resolve(reader.cancel()).catch(() => {}); } catch (_) {} }
       try { reader.releaseLock(); } catch (_) {}
@@ -217,12 +280,13 @@
   }
   function nextFetch() {
     let choice = null;
+    const previewsPending = Array.from(stores.values()).some(store => store.preview && !store.preview.finished && !store.preview.failed);
     for (const store of stores.values()) {
       const active = Array.from(store.requests.values()).filter(request => request.started).length;
       for (const request of store.requests.values()) {
         // Equal-priority work takes a free slot from the least-served panel.
         // One panel's surrounding views must not monopolize another's first view.
-        if (!request.started && (!choice || request.priority < choice.request.priority
+        if (!request.started && (!previewsPending || request.preview) && (!choice || request.priority < choice.request.priority
           || request.priority === choice.request.priority && active < choice.active)) choice = {store, request, active};
       }
     }
@@ -240,9 +304,11 @@
         // The validated content hash gives revised packets a distinct HTTP
         // cache key. Both whole-pack and per-frame checks still verify bytes.
         if (request.pack) init.cache = 'force-cache';
+        if (request.pack && window.ComicAssetDelivery && typeof window.ComicAssetDelivery.fetch === 'function') return window.ComicAssetDelivery.fetch(request.pack.source, request.pack.sha256, init);
         const source = request.pack ? `${request.pack.source}?sha256=${request.pack.sha256}` : store.sequence.frames[request.index];
         return fetch(source, init);
       }).then(response => {
+        request.deliveryResponse = response;
         if (!current(store, generation)) throw new Error('Frame store disposed');
         if (!response.ok) throw new Error(`Frame ${request.pack ? 'pack' : 'image'} HTTP ${response.status}`);
         if (request.pack && request.pack.frameBytes && response.body && typeof response.body.getReader === 'function') return streamPack(store, request, response, generation);
@@ -250,7 +316,8 @@
       }).then(result => {
         if (!current(store, generation)) throw new Error('Frame store disposed');
         if (request.pack) {
-          if (result) for (const [index, blob] of result) publishBlob(store, index, blob, generation);
+          if (result) for (const [index, blob] of result) publishBlob(store, index, blob, generation, request.preview);
+          if (request.preview) store.preview.finished = true;
         } else {
           if (!result || result.size === 0) throw new Error('Frame image is empty');
           store.blobs.set(request.index, result);
@@ -258,13 +325,16 @@
         request.resolve();
         for (const consumer of store.consumers) scheduleProgress(consumer);
       }).catch(error => {
+        if (request.deliveryResponse && !request.controller.signal.aborted && window.ComicAssetDelivery && typeof window.ComicAssetDelivery.markFailed === 'function') window.ComicAssetDelivery.markFailed(request.deliveryResponse);
         if (current(store, generation)) {
           // Independently verified payloads remain usable even if a later row or
           // the final pack hash fails; never publish any unverified remainder.
+          const blobs = request.preview ? store.preview.blobs : store.blobs, errors = request.preview ? store.preview.errors : store.errors;
+          if (request.preview) store.preview.failed = true;
           for (const index of request.pack ? request.pack.indices : [request.index]) {
-            if (store.blobs.has(index)) continue;
-            store.errors.set(index, error);
-            const waiter = store.frameWaiters.get(index);
+            if (blobs.has(index)) continue;
+            errors.set(index, error);
+            const waiter = !request.preview && store.frameWaiters.get(index);
             if (waiter) { store.frameWaiters.delete(index); waiter.reject(error); }
           }
           for (const consumer of store.consumers) {
@@ -274,6 +344,7 @@
         }
         request.reject(error);
       }).finally(() => {
+        clearPreviewIdle(request);
         if (store.requests.get(request.key) === request) store.requests.delete(request.key);
         fetchPending--; schedulePump();
       });
@@ -289,24 +360,40 @@
     void requestBlob(consumer.store, consumer.target, 0).catch(() => {});
     for (const index of neighbors(consumer)) void requestBlob(consumer.store, index, 1).catch(() => {});
   }
+  function wantedFrame(consumer, index = consumer.target) {
+    const store = consumer.store, preview = store.preview;
+    if (store.blobs.has(index) || !store.sequence.packs || !preview) return {index, preview:false};
+    // Native front/reset must never reveal an unrelated approximate angle.
+    if (index === 0) return preview.blobs.has(0) && !preview.errors.has(0) ? {index:0, preview:true} : {index:0, preview:false};
+    let nearest = null, distance = Infinity;
+    for (const candidate of preview.blobs.keys()) {
+      if (preview.errors.has(candidate)) continue;
+      const delta = Math.abs(candidate - index), gap = Math.min(delta, store.sequence.frameCount - delta);
+      if (gap < distance || gap === distance && candidate < nearest) { nearest = candidate; distance = gap; }
+    }
+    return nearest === null ? {index, preview:false} : {index:nearest, preview:true};
+  }
   function nextDecode() {
     // Derive demand from live consumers instead of accumulating stale seek promises.
     for (const store of stores.values()) {
       for (const consumer of store.consumers) {
-        const index = consumer.target;
-        if (consumer.actualIndex !== index && !lru.has(keyFor(store, index)) && !store.pending.has(index) && !store.errors.has(index)
-          && (!store.sequence.packs || store.blobs.has(index))) return {store, index, priority:0};
+        const {index, preview} = wantedFrame(consumer), key = pendingKey(index, preview);
+        const blobs = preview ? store.preview.blobs : store.blobs, errors = preview ? store.preview.errors : store.errors;
+        if ((consumer.actualIndex !== index || consumer.actualPreview !== preview) && !lru.has(keyFor(store, index, preview)) && !store.pending.has(key) && !errors.has(index)
+          && (!store.sequence.packs || blobs.has(index))) return {store, index, preview, priority:0};
       }
     }
     for (const store of stores.values()) {
       for (const consumer of store.consumers) {
-        for (const index of neighbors(consumer)) {
-          if (consumer.prefetched.has(index)) continue;
+        for (const target of neighbors(consumer)) {
+          const {index, preview} = wantedFrame(consumer, target), key = pendingKey(index, preview);
+          const blobs = preview ? store.preview.blobs : store.blobs, errors = preview ? store.preview.errors : store.errors;
+          if (consumer.prefetched.has(key)) continue;
           // Network waiters must not occupy the four bitmap-decode slots: a
           // freshly verified demanded frame can arrive before its neighbors.
-          if (store.sequence.packs && !store.blobs.has(index)) continue;
-          consumer.prefetched.add(index);
-          if (!lru.has(keyFor(store, index)) && !store.pending.has(index) && !store.errors.has(index)) return {store, index, priority:1};
+          if (store.sequence.packs && !blobs.has(index)) continue;
+          consumer.prefetched.add(key);
+          if (!lru.has(keyFor(store, index, preview)) && !store.pending.has(key) && !errors.has(index)) return {store, index, preview, priority:1};
         }
       }
     }
@@ -316,28 +403,35 @@
     while (decodePending < MAX_DECODE_PENDING) {
       const next = nextDecode();
       if (!next) break;
-      const {store, index, priority} = next, generation = store.generation;
+      const {store, index, preview, priority} = next, generation = store.generation, key = pendingKey(index, preview);
       // Reserve capacity before createImageBitmap, so even its late result never
       // makes the live decoded bitmap count exceed24.
       while (lru.size + decodePending >= MAX_BITMAPS) evictOldest();
-      store.pending.add(index); decodePending++;
-      requestBlob(store, index, priority).then(blob => {
+      store.pending.add(key); decodePending++;
+      (preview ? Promise.resolve(store.preview.blobs.get(index)) : requestBlob(store, index, priority)).then(blob => {
         if (!current(store, generation)) return null;
         return createImageBitmap(blob);
       }).then(bitmap => {
         if (!bitmap) return;
         if (!current(store, generation)) { bitmap.close(); return; }
-        if (bitmap.width !== store.sequence.width || bitmap.height !== store.sequence.height) {
+        const dimensions = preview ? store.preview.spec : store.sequence;
+        if (bitmap.width !== dimensions.width || bitmap.height !== dimensions.height) {
           bitmap.close(); throw new Error('Frame dimensions do not match the bound media');
         }
-        lru.set(keyFor(store, index), {store, index, bitmap});
-        for (const consumer of store.consumers) if (consumer.target === index) scheduleRender(consumer);
+        lru.set(keyFor(store, index, preview), {store, index, preview, bitmap});
+        for (const consumer of store.consumers) {
+          const wanted = wantedFrame(consumer);
+          if (wanted.index === index && wanted.preview === preview) scheduleRender(consumer);
+        }
       }).catch(error => {
         if (!current(store, generation)) return;
-        store.errors.set(index, error);
-        for (const consumer of store.consumers) if (consumer.target === index) scheduleRender(consumer);
+        (preview ? store.preview.errors : store.errors).set(index, error);
+        for (const consumer of store.consumers) {
+          scheduleProgress(consumer);
+          if (preview || consumer.target === index) scheduleRender(consumer);
+        }
       }).finally(() => {
-        store.pending.delete(index); decodePending--; schedulePump();
+        store.pending.delete(key); decodePending--; schedulePump();
       });
     }
   }
@@ -347,9 +441,9 @@
     defer(() => {
       consumer.renderScheduled = false;
       if (consumer.disposed || consumer.store.disposed) return;
-      const index = consumer.target, bitmap = peek(consumer.store, index);
+      const {index, preview} = wantedFrame(consumer), bitmap = peek(consumer.store, index, preview);
       if (!bitmap) {
-        const error = consumer.store.errors.get(index);
+        const error = !preview && consumer.store.errors.get(index);
         if (error && consumer.errorVersion !== consumer.version) {
           consumer.errorVersion = consumer.version;
           if (typeof consumer.options.onError === 'function') consumer.options.onError(error);
@@ -361,11 +455,12 @@
         if (typeof consumer.options.onError === 'function') consumer.options.onError(error);
         return;
       }
-      consumer.actualIndex = index;
+      consumer.actualIndex = index; consumer.actualPreview = preview;
       const sequence = consumer.store.sequence, firstReady = !consumer.ready;
       consumer.ready = true;
-      if (firstReady && typeof consumer.options.onReady === 'function') consumer.options.onReady({frameCount:sequence.frameCount, width:sequence.width, height:sequence.height, sourceWidth:sequence.sourceWidth, sourceHeight:sequence.sourceHeight, duration:sequence.duration});
-      if (!consumer.disposed && consumer.target === index && typeof consumer.options.onFrame === 'function') consumer.options.onFrame({index, currentTime:index / sequence.frameCount * sequence.duration, duration:sequence.duration, percent:index / sequence.frameCount * 100});
+      if (firstReady && typeof consumer.options.onReady === 'function') consumer.options.onReady({frameCount:sequence.frameCount, width:sequence.width, height:sequence.height, sourceWidth:sequence.sourceWidth, sourceHeight:sequence.sourceHeight, duration:sequence.duration, preview});
+      const wanted = wantedFrame(consumer);
+      if (!consumer.disposed && wanted.index === index && wanted.preview === preview && typeof consumer.options.onFrame === 'function') consumer.options.onFrame({index, targetIndex:consumer.target, preview, currentTime:index / sequence.frameCount * sequence.duration, duration:sequence.duration, percent:index / sequence.frameCount * 100});
       schedulePump();
     });
   }
@@ -389,6 +484,7 @@
     if (stores.get(store.key) === store) stores.delete(store.key);
     for (const [key, entry] of lru) if (entry.store === store) { entry.bitmap.close(); lru.delete(key); }
     for (const request of store.requests.values()) {
+      clearPreviewIdle(request);
       if (request.controller) request.controller.abort();
       if (request.reader) { try { void Promise.resolve(request.reader.cancel()).catch(() => {}); } catch (_) {} }
       request.reject(new Error('Frame store disposed'));
@@ -396,6 +492,7 @@
     for (const waiter of store.frameWaiters.values()) waiter.reject(new Error('Frame store disposed'));
     store.frameWaiters.clear();
     store.requests.clear(); store.blobs.clear(); store.errors.clear(); store.pending.clear();
+    if (store.preview) { store.preview.blobs.clear(); store.preview.errors.clear(); }
     schedulePump();
   }
   function create(panel, page, options = {}) {
@@ -408,15 +505,18 @@
     if (!context) return null;
     canvas.width = sequence.width; canvas.height = sequence.height;
     canvas.setAttribute('aria-hidden', 'true');
-    const key = JSON.stringify([sequence.mediaSha256, sequence.videoSource, sequence.frameCount, sequence.sourceWidth, sequence.sourceHeight, sequence.width, sequence.height, sequence.duration, sequence.frames, sequence.packs]);
+    const previewSequence = boundPreview(panel, page, sequence);
+    const key = JSON.stringify([sequence.mediaSha256, sequence.videoSource, sequence.frameCount, sequence.sourceWidth, sequence.sourceHeight, sequence.width, sequence.height, sequence.duration, sequence.frames, sequence.packs, previewSequence]);
     let store = stores.get(key);
     if (!store) {
       const warm = retained.get(key);
       if (warm) { retained.delete(key); retainedBytes -= warm.bytes; }
       const packByIndex = sequence.packs ? new Array(sequence.frameCount) : null;
       if (packByIndex) for (const pack of sequence.packs) for (const index of pack.indices) packByIndex[index] = pack;
-      store = {key, id:++serial, sequence, packByIndex, subtle:sequence.packs ? window.crypto.subtle : null, generation:0, disposed:false, consumers:new Set(), blobs:warm ? new Map(warm.blobs) : new Map(), frameWaiters:new Map(), requests:new Map(), pending:new Set(), errors:new Map()};
+      const preview = !warm && previewSequence ? {spec:previewSequence, blobs:new Map(), errors:new Map(), finished:false, failed:false} : null;
+      store = {key, id:++serial, sequence, preview, packByIndex, subtle:sequence.packs ? window.crypto.subtle : null, generation:0, disposed:false, consumers:new Set(), blobs:warm ? new Map(warm.blobs) : new Map(), frameWaiters:new Map(), requests:new Map(), pending:new Set(), errors:new Map()};
       stores.set(key, store);
+      if (preview) void enqueueRequest(store, preview.spec.pack.source, -2, 0, preview.spec.pack, true).catch(() => {});
       // Compressed images are small and reusable; decode only the requested/nearby frames.
       if (sequence.packs) {
         // Demand and its neighbors do not necessarily touch every interleaved
@@ -425,7 +525,7 @@
         for (const pack of sequence.packs) if (!pack.indices.every(index => store.blobs.has(index))) void enqueueRequest(store, pack.source, 2, pack.indices[0], pack).catch(() => {});
       } else for (let index = 0; index < sequence.frameCount; index++) void requestBlob(store, index, 2).catch(() => {});
     }
-    const consumer = {store, canvas, context, options, target:0, actualIndex:-1, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false, progressFrame:null, progressVersion:0, progressLoaded:-1, progressFailed:-1};
+    const consumer = {store, canvas, context, options, target:0, actualIndex:-1, actualPreview:false, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false, progressFrame:null, progressVersion:0, progressLoaded:-1, progressFailed:-1, previewProgressLoaded:-1, previewProgressFailed:-1};
     store.consumers.add(consumer);
     function setPercent(percent) {
       if (consumer.disposed || !Number.isFinite(Number(percent))) return;

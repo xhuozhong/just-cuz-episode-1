@@ -52,16 +52,21 @@
     const interrupted = data.loadingFailed === 'true' && !(videoMode && data.interactionState === 'ready');
     // The player's ready state already verifies decode, protection and the full MP4 seek range.
     const complete = !interrupted && data.interactionState === 'ready' && (videoMode || positive(total) && loaded >= total);
-    let fraction = positive(total) ? loaded / total : 0;
-    if (videoMode && (!loaded || data.frameReady === 'fallback')) fraction = videoFraction(record.video);
+    const previewReady = data.previewReady === 'true' && data.interactionState === 'ready';
+    const previewPhase = data.frameReady !== 'fallback' && Number(data.previewTotal) > 0 && Number(data.previewFailed || 0) === 0 && !loaded
+      && (!previewReady || Number(data.previewLoaded || 0) < Number(data.previewTotal));
+    let fraction = previewPhase ? Number(data.previewLoaded || 0) / Number(data.previewTotal) : positive(total) ? loaded / total : 0;
+    if (videoMode && !previewPhase && (!loaded || data.frameReady === 'fallback')) fraction = videoFraction(record.video);
     const percent = complete ? 100 : Math.min(99, Math.max(0, Math.floor(fraction * 100)));
     const state = data.interactionState === 'error' || interrupted ? 'error' : complete ? 'ready' : 'loading';
     const title = (host.getAttribute('aria-label') || '这个画面').split('，')[0];
-    const label = state === 'error' ? '加载暂时中断' : '环绕画面加载中';
+    const label = state === 'error' ? '加载暂时中断' : previewPhase ? '环绕预览加载中' : previewReady ? '高清画面加载中' : '环绕画面加载中';
     const hint = state === 'error' ? '请点击页面上方「重新准备」'
+      : previewPhase ? (previewReady ? '预览可先拖动，正在补齐全角度' : '先准备全角度小预览，再补充高清')
+      : previewReady ? '预览可拖动，高清加载中'
       : percent === 99 ? '正在准备最后的画面，请稍候'
       : data.interactionState === 'ready' ? '可先拖动，完整视角仍在加载' : '完成后拖动更流畅，请稍候';
-    const description = state === 'error' ? `${title}，画面加载 ${percent}%，暂时中断，请重新准备` : `${title}，环绕画面加载 ${percent}%，${hint}`;
+    const description = state === 'error' ? `${title}，画面加载 ${percent}%，暂时中断，请重新准备` : `${title}，${label.replace(/中$/, '')} ${percent}%，${hint}`;
     if (record.number.textContent !== `${percent}%`) record.number.textContent = `${percent}%`;
     if (record.label.textContent !== label) record.label.textContent = label;
     if (record.hint.textContent !== hint) record.hint.textContent = hint;

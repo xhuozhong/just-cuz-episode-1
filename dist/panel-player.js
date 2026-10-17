@@ -205,7 +205,8 @@
     if (!backgroundOnly) controlsContainer.append(row);
     let disposed = false, metadata = false, decoded = false, loadFailed = false, seekFailed = false;
     let videoStarted = false, videoFailed = false, pendingPlay = false, playTarget = 0, videoMessage = '';
-    let loadedFrames = 0, frameLoadFailed = false, lastStatus = '', updatingAvailability = false;
+    let loadedFrames = 0, previewLoaded = 0, previewTotal = 0, previewFailed = 0, previewReady = false, previewActive = false;
+    let frameLoadFailed = false, lastStatus = '', updatingAvailability = false;
     let backdropVisible = false, reportedActivity = false;
     let desired = null, issued = null, inFlight = false, timer = null, loadTimer = null, dragging = null, motion = null;
     let frameRenderer = null, frameMode = false, frameFailed = false, frameTime = 0, frameTargetPercent = null, frameRequestedAt = 0;
@@ -226,8 +227,8 @@
       const state = loadFailed || !cacheReady() && (videoFailed || seekFailed) ? 'error' : seekReady() ? 'ready' : 'loading';
       const targetIndex = frameTargetPercent === null ? null : Math.min(m.frameCount - 1, Math.max(0, Math.floor(frameTargetPercent / 100 * m.frameCount + 1e-9)));
       const anglePending = !!(inFlight || desired !== null || !framePlaybackBlocked && frameRenderer && !frameFailed && targetIndex !== null && targetIndex !== lastFrameIndex);
-      const detail = {panelId:panel.id, regionId:region ? region.id : null, interactionState:state, loadedFrames, totalFrames:m.frameCount, loadingFailed:frameLoadFailed, anglePending};
-      Object.assign(host.dataset, {interactionState:state, loadedFrames:String(loadedFrames), totalFrames:String(m.frameCount), loadingFailed:String(frameLoadFailed), anglePending:String(anglePending)});
+      const detail = {panelId:panel.id, regionId:region ? region.id : null, interactionState:state, loadedFrames, totalFrames:m.frameCount, loadingFailed:frameLoadFailed, previewLoaded, previewTotal, previewFailed, previewReady, previewActive, anglePending};
+      Object.assign(host.dataset, {interactionState:state, loadedFrames:String(loadedFrames), totalFrames:String(m.frameCount), loadingFailed:String(frameLoadFailed), previewLoaded:String(previewLoaded), previewTotal:String(previewTotal), previewFailed:String(previewFailed), previewReady:String(previewReady), previewActive:String(previewActive), anglePending:String(anglePending)});
       const status = JSON.stringify(detail);
       if (status === lastStatus) return;
       lastStatus = status;
@@ -427,10 +428,11 @@
     });
     if (window.OrbitFrameCache && new URLSearchParams(location.search).get('frames') !== 'off') {
       frameRenderer = window.OrbitFrameCache.create(panel, page, {
-        onReady() {
+        onReady(actual) {
           if (disposed || frameFailed || !frameRenderer) return;
           host.dataset.frameReady = 'true';
-          loadedFrames = Math.max(loadedFrames, 1);
+          if (actual && actual.preview) previewReady = true;
+          else loadedFrames = Math.max(loadedFrames, 1);
           updateAvailability();
         },
         onProgress(actual) {
@@ -438,6 +440,10 @@
           const failed = actual.failed === undefined ? 0 : actual.failed;
           if (!Number.isInteger(failed) || failed < 0 || failed > actual.total) return;
           loadedFrames = Math.max(loadedFrames, actual.loaded);
+          if (Number.isInteger(actual.previewLoaded) && Number.isInteger(actual.previewTotal) && actual.previewLoaded >= 0 && actual.previewTotal >= actual.previewLoaded) {
+            previewLoaded = actual.previewLoaded; previewTotal = actual.previewTotal;
+            previewFailed = Number.isInteger(actual.previewFailed) && actual.previewFailed >= 0 ? actual.previewFailed : 0;
+          }
           frameLoadFailed = loadedFrames < m.frameCount && failed > 0;
           updateAvailability();
         },
@@ -445,6 +451,8 @@
           if (disposed || frameFailed || framePlaybackBlocked || !video.paused) return;
           if (!frameMode) { desired = null; issued = null; inFlight = false; clearTimeout(timer); }
           frameMode = true; frameTime = actual.currentTime;
+          previewActive = actual.preview === true;
+          if (previewActive) previewReady = true;
           frameDraws++; if (actual.index !== lastFrameIndex) frameChanges++;
           lastFrameIndex = actual.index;
           host.dataset.frameIndex = String(actual.index); host.dataset.frameDraws = String(frameDraws); host.dataset.frameChanges = String(frameChanges);
@@ -458,7 +466,7 @@
         },
         onError() {
           if (disposed) return;
-          frameFailed = true; frameLoadFailed = false; host.dataset.frameReady = 'fallback';
+          frameFailed = true; frameLoadFailed = false; previewActive = false; previewReady = false; host.dataset.frameReady = 'fallback';
           // A late cache callback must not rewind an already playing MP4.
           if (!framePlaybackBlocked) desired = backgroundOnly ? 0 : Math.min(m.duration - .001, frameTargetPercent !== null ? frameTargetPercent / 100 * m.duration : displayTime());
           frameMode = false;
