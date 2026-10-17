@@ -26,7 +26,12 @@
       try { rect = JSON.parse(host.dataset.interactionRect); } catch (_) { return null; }
       if (!validRect(rect, bounds.width, bounds.height)) return null;
     }
-    return {left:`${(bounds.x + rect.x + rect.width) / page.width * 100}%`, top:`${(bounds.y + rect.y + rect.height) / page.height * 100}%`};
+    return {
+      left:`${(bounds.x + rect.x + rect.width / 2) / page.width * 100}%`,
+      top:`${(bounds.y + rect.y + rect.height / 2) / page.height * 100}%`,
+      width:`calc(${rect.width / page.width * 100}% - 16px)`,
+      compact:rect.width / page.width < .4
+    };
   }
   function videoFraction(video) {
     if (!video || !positive(video.duration)) return 0;
@@ -44,15 +49,22 @@
   function update(host, record) {
     const data = host.dataset, loaded = Math.max(0, Number(data.loadedFrames) || 0), total = Number(data.totalFrames);
     const videoMode = data.renderMode === 'video';
+    const interrupted = data.loadingFailed === 'true' && !(videoMode && data.interactionState === 'ready');
     // The player's ready state already verifies decode, protection and the full MP4 seek range.
-    const complete = data.interactionState === 'ready' && (videoMode || positive(total) && loaded >= total);
+    const complete = !interrupted && data.interactionState === 'ready' && (videoMode || positive(total) && loaded >= total);
     let fraction = positive(total) ? loaded / total : 0;
     if (videoMode && (!loaded || data.frameReady === 'fallback')) fraction = videoFraction(record.video);
     const percent = complete ? 100 : Math.min(99, Math.max(0, Math.floor(fraction * 100)));
-    const state = data.interactionState === 'error' ? 'error' : complete ? 'ready' : 'loading';
+    const state = data.interactionState === 'error' || interrupted ? 'error' : complete ? 'ready' : 'loading';
     const title = (host.getAttribute('aria-label') || '这个画面').split('，')[0];
-    const description = state === 'error' ? `${title}，画面加载 ${percent}%，暂时中断，请重新准备` : `${title}，画面加载 ${percent}%`;
-    if (record.badge.textContent !== `${percent}%`) record.badge.textContent = `${percent}%`;
+    const label = state === 'error' ? '加载暂时中断' : '环绕画面加载中';
+    const hint = state === 'error' ? '请点击页面上方「重新准备」'
+      : percent === 99 ? '正在准备最后的画面，请稍候'
+      : data.interactionState === 'ready' ? '可先拖动，完整视角仍在加载' : '完成后拖动更流畅，请稍候';
+    const description = state === 'error' ? `${title}，画面加载 ${percent}%，暂时中断，请重新准备` : `${title}，环绕画面加载 ${percent}%，${hint}`;
+    if (record.number.textContent !== `${percent}%`) record.number.textContent = `${percent}%`;
+    if (record.label.textContent !== label) record.label.textContent = label;
+    if (record.hint.textContent !== hint) record.hint.textContent = hint;
     if (record.badge.dataset.state !== state) record.badge.dataset.state = state;
     if (record.badge.getAttribute('aria-label') !== description) record.badge.setAttribute('aria-label', description);
     record.badge.title = description;
@@ -76,13 +88,17 @@
         badge.setAttribute('aria-live', 'off');
         badge.dataset.sourcePanelId = host.dataset.sourcePanelId;
         if (host.dataset.interactionRegion) badge.dataset.interactionRegion = host.dataset.interactionRegion;
+        const label = document.createElement('span'), number = document.createElement('strong'), hint = document.createElement('span');
+        label.className = 'panel-loading-label'; number.className = 'panel-loading-number'; hint.className = 'panel-loading-hint';
+        badge.append(label, number, hint);
         const video = host.querySelector('.panel-video');
-        record = {badge, video}; records.set(host, record);
+        record = {badge, video, label, number, hint}; records.set(host, record);
         if (video) for (const event of ['progress', 'loadedmetadata', 'durationchange']) video.addEventListener(event, queue);
         // A direct layer child stays visible while the source-bound player has opacity:0 or is clipped.
         layer.append(badge);
       }
-      Object.assign(record.badge.style, point);
+      Object.assign(record.badge.style, {left:point.left, top:point.top, width:point.width});
+      record.badge.dataset.compact = String(point.compact);
       update(host, record);
     }
   }

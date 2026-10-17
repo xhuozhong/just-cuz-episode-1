@@ -83,10 +83,11 @@
   function scheduleProgress(consumer) {
     if (consumer.disposed || typeof consumer.options.onProgress !== 'function') return;
     const complete = consumer.store.blobs.size === consumer.store.sequence.frameCount;
+    const urgent = complete || consumer.store.errors.size > consumer.progressFailed;
     // The initial callback stays asynchronous. Streamed rows then share one
     // update per animation frame; completion must also work in a hidden tab.
     if (consumer.progressScheduled) {
-      if (!complete || consumer.progressFrame === null) return;
+      if (!urgent || consumer.progressFrame === null) return;
       window.cancelAnimationFrame(consumer.progressFrame); consumer.progressFrame = null;
     }
     consumer.progressScheduled = true;
@@ -96,14 +97,15 @@
       consumer.progressFrame = null;
       consumer.progressScheduled = false;
       if (!consumer.disposed && !consumer.store.disposed && typeof consumer.options.onProgress === 'function') {
-        const loaded = consumer.store.blobs.size;
-        if (loaded !== consumer.progressLoaded) {
+        const loaded = consumer.store.blobs.size, failed = consumer.store.errors.size;
+        if (loaded !== consumer.progressLoaded || failed !== consumer.progressFailed) {
           consumer.progressLoaded = loaded;
-          consumer.options.onProgress({loaded, total:consumer.store.sequence.frameCount});
+          consumer.progressFailed = failed;
+          consumer.options.onProgress({loaded, failed, total:consumer.store.sequence.frameCount});
         }
       }
     };
-    if (consumer.progressLoaded < 0 || complete || typeof window.requestAnimationFrame !== 'function' || typeof window.cancelAnimationFrame !== 'function') defer(deliver);
+    if (consumer.progressLoaded < 0 || urgent || typeof window.requestAnimationFrame !== 'function' || typeof window.cancelAnimationFrame !== 'function') defer(deliver);
     else consumer.progressFrame = window.requestAnimationFrame(deliver);
   }
   function enqueueRequest(store, key, priority, index, pack) {
@@ -214,8 +216,12 @@
   function nextFetch() {
     let choice = null;
     for (const store of stores.values()) {
+      const active = Array.from(store.requests.values()).filter(request => request.started).length;
       for (const request of store.requests.values()) {
-        if (!request.started && (!choice || request.priority < choice.request.priority)) choice = {store, request};
+        // Equal-priority work takes a free slot from the least-served panel.
+        // One panel's surrounding views must not monopolize another's first view.
+        if (!request.started && (!choice || request.priority < choice.request.priority
+          || request.priority === choice.request.priority && active < choice.active)) choice = {store, request, active};
       }
     }
     return choice;
@@ -259,7 +265,10 @@
             const waiter = store.frameWaiters.get(index);
             if (waiter) { store.frameWaiters.delete(index); waiter.reject(error); }
           }
-          for (const consumer of store.consumers) if (store.errors.has(consumer.target)) scheduleRender(consumer);
+          for (const consumer of store.consumers) {
+            scheduleProgress(consumer);
+            if (store.errors.has(consumer.target)) scheduleRender(consumer);
+          }
         }
         request.reject(error);
       }).finally(() => {
@@ -390,9 +399,14 @@
       store = {key, id:++serial, sequence, packByIndex, subtle:sequence.packs ? window.crypto.subtle : null, generation:0, disposed:false, consumers:new Set(), blobs:new Map(), frameWaiters:new Map(), requests:new Map(), pending:new Set(), errors:new Map()};
       stores.set(key, store);
       // Compressed images are small and reusable; decode only the requested/nearby frames.
-      if (!sequence.packs) for (let index = 0; index < sequence.frameCount; index++) void requestBlob(store, index, 2).catch(() => {});
+      if (sequence.packs) {
+        // Demand and its neighbors do not necessarily touch every interleaved
+        // pack (for example 162 frames only touches three of the four packs).
+        // Queue complete coverage once; live demand below promotes its own work.
+        for (const pack of sequence.packs) void enqueueRequest(store, pack.source, 2, pack.indices[0], pack).catch(() => {});
+      } else for (let index = 0; index < sequence.frameCount; index++) void requestBlob(store, index, 2).catch(() => {});
     }
-    const consumer = {store, canvas, context, options, target:0, actualIndex:-1, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false, progressFrame:null, progressVersion:0, progressLoaded:-1};
+    const consumer = {store, canvas, context, options, target:0, actualIndex:-1, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false, progressFrame:null, progressVersion:0, progressLoaded:-1, progressFailed:-1};
     store.consumers.add(consumer);
     function setPercent(percent) {
       if (consumer.disposed || !Number.isFinite(Number(percent))) return;

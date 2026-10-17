@@ -185,7 +185,7 @@
     if (!backgroundOnly) controlsContainer.append(row);
     let disposed = false, metadata = false, decoded = false, loadFailed = false, seekFailed = false;
     let videoStarted = false, videoFailed = false, pendingPlay = false, playTarget = 0, videoMessage = '';
-    let loadedFrames = 0, lastStatus = '', updatingAvailability = false;
+    let loadedFrames = 0, frameLoadFailed = false, lastStatus = '', updatingAvailability = false;
     let backdropVisible = false, reportedActivity = false;
     let desired = null, issued = null, inFlight = false, timer = null, loadTimer = null, dragging = null, motion = null;
     let frameRenderer = null, frameMode = false, frameFailed = false, frameTime = 0, frameTargetPercent = null, frameRequestedAt = 0;
@@ -206,8 +206,8 @@
       const state = loadFailed || !cacheReady() && (videoFailed || seekFailed) ? 'error' : seekReady() ? 'ready' : 'loading';
       const targetIndex = frameTargetPercent === null ? null : Math.min(m.frameCount - 1, Math.max(0, Math.floor(frameTargetPercent / 100 * m.frameCount + 1e-9)));
       const anglePending = !!(inFlight || desired !== null || !framePlaybackBlocked && frameRenderer && !frameFailed && targetIndex !== null && targetIndex !== lastFrameIndex);
-      const detail = {panelId:panel.id, regionId:region ? region.id : null, interactionState:state, loadedFrames, totalFrames:m.frameCount, anglePending};
-      Object.assign(host.dataset, {interactionState:state, loadedFrames:String(loadedFrames), totalFrames:String(m.frameCount), anglePending:String(anglePending)});
+      const detail = {panelId:panel.id, regionId:region ? region.id : null, interactionState:state, loadedFrames, totalFrames:m.frameCount, loadingFailed:frameLoadFailed, anglePending};
+      Object.assign(host.dataset, {interactionState:state, loadedFrames:String(loadedFrames), totalFrames:String(m.frameCount), loadingFailed:String(frameLoadFailed), anglePending:String(anglePending)});
       const status = JSON.stringify(detail);
       if (status === lastStatus) return;
       lastStatus = status;
@@ -243,8 +243,8 @@
         host.tabIndex = !backgroundOnly && seekReady() ? 0 : -1;
         updateActual();
         if (ready) {
-          notice.textContent = videoMessage || (!seekReady() ? '当前浏览器尚不能拖动这段视频。可播放，或用本地预览入口重新打开。' : '');
-          retry.hidden = !videoMessage;
+          notice.textContent = frameLoadFailed ? '部分环绕角度加载中断，已打开的画面仍可查看。请重新准备。' : videoMessage || (!seekReady() ? '当前浏览器尚不能拖动这段视频。可播放，或用本地预览入口重新打开。' : '');
+          retry.hidden = !videoMessage && !frameLoadFailed;
         }
         if (videoSeekReady() && desired !== null && !inFlight) issueSeek();
         tryStartPlayback();
@@ -354,8 +354,8 @@
     }
     function startLoad() {
       if (disposed) return;
-      const retryVideo = videoFailed || seekFailed;
-      loadFailed = false; pause();
+      const retryVideo = videoFailed || seekFailed || frameLoadFailed;
+      loadFailed = false; frameLoadFailed = false; pause();
       notice.textContent = '正在准备画面…'; retry.hidden = true; videoMessage = '';
       loadProtection();
       if (!frameRenderer || frameFailed || retryVideo) startVideoLoad(retryVideo);
@@ -408,7 +408,11 @@
         },
         onProgress(actual) {
           if (disposed || frameFailed || !actual || actual.total !== m.frameCount || !Number.isInteger(actual.loaded) || actual.loaded < 0 || actual.loaded > actual.total) return;
-          loadedFrames = Math.max(loadedFrames, actual.loaded); updateAvailability();
+          const failed = actual.failed === undefined ? 0 : actual.failed;
+          if (!Number.isInteger(failed) || failed < 0 || failed > actual.total) return;
+          loadedFrames = Math.max(loadedFrames, actual.loaded);
+          frameLoadFailed = loadedFrames < m.frameCount && failed > 0;
+          updateAvailability();
         },
         onFrame(actual) {
           if (disposed || frameFailed || framePlaybackBlocked || !video.paused) return;
@@ -427,7 +431,7 @@
         },
         onError() {
           if (disposed) return;
-          frameFailed = true; host.dataset.frameReady = 'fallback';
+          frameFailed = true; frameLoadFailed = false; host.dataset.frameReady = 'fallback';
           // A late cache callback must not rewind an already playing MP4.
           if (!framePlaybackBlocked) desired = backgroundOnly ? 0 : Math.min(m.duration - .001, frameTargetPercent !== null ? frameTargetPercent / 100 * m.duration : displayTime());
           frameMode = false;
