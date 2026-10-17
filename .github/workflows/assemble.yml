@@ -18,7 +18,11 @@ jobs:
           p=json.loads(pathlib.Path('runtime-import.json').read_text())
           root=pathlib.Path(os.environ['RUNNER_TEMP'])/'episode-bundles'
           root.mkdir()
-          def run(*args): return subprocess.run(args,check=True,capture_output=True,text=True).stdout.strip()
+          def run(*args):
+              process=subprocess.run(args,capture_output=True,text=True)
+              if process.returncode:
+                  print(process.stdout); print(process.stderr); process.check_returncode()
+              return process.stdout.strip()
           run('git','fetch','--no-tags','origin',*p['alreadyRemoteCommits'])
           for bundle in sorted(p['bundles'],key=lambda b:b['name']=='reviewed-final.bundle'):
               assert re.fullmatch(r'[A-Za-z0-9._-]+',bundle['name'])
@@ -27,7 +31,7 @@ jobs:
                   for chunk in bundle['chunks']:
                       part=root/chunk['name']
                       with part.open('wb') as sink:
-                          subprocess.run(['gh','api','-H','Accept: application/octet-stream',f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/assets/{chunk['id']}"],stdout=sink,check=True)
+                          subprocess.run(['gh','api','--allow-escape-sequences','-H','Accept: application/octet-stream',f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/assets/{chunk['id']}"],stdout=sink,check=True)
                       data=part.read_bytes()
                       assert len(data)==chunk['bytes'] and hashlib.sha256(data).hexdigest()==chunk['sha256']
                       output.write(data)
