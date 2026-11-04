@@ -1,0 +1,18 @@
+<script id="comic-performance-opt-in">
+(() => {
+  if (new URLSearchParams(location.search).get('perf') !== '1') return;
+  const state = window.__comicPerf = {originals:[], panelEvents:[], started:performance.now()};
+  document.addEventListener('comic-page-original-ready', event => {
+    state.originals.push({at:performance.now(), page:event.detail.readingPage});
+  });
+  document.addEventListener('comic-panel-status', event => {
+    const d=event.detail || {};
+    if (d.previewReady || d.loadedFrames === d.totalFrames)
+      state.panelEvents.push({at:performance.now(), panel:d.panelId, previewReady:d.previewReady, loaded:d.loadedFrames, total:d.totalFrames, interactionState:d.interactionState});
+    if (state.panelEvents.length > 500) state.panelEvents.shift();
+  });
+  const script=document.createElement('script');
+  script.src='perf-diagnostics.js?v=__PERF_SHA__'; script.async=true;
+  document.head.appendChild(script);
+})();
+</script>
