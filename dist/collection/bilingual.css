@@ -1,0 +1,28 @@
+@font-face{font-family:"Just Cuz Bilingual";src:url("ui-assets/fonts/just-cuz-bilingual-zh.woff2?v=e74db9d12268") format("woff2");font-style:normal;font-weight:400;font-display:swap}
+.language-switch{display:flex;flex:none;gap:2px;padding:2px;border:1px solid #b29bc3;border-radius:13px;background:#fffaf8}
+.reader-toolbar .language-switch button{min-width:40px;min-height:34px;border:0;border-radius:10px;padding:4px 8px;font-size:11px;background:transparent;box-shadow:none}
+.reader-toolbar .language-switch button[aria-pressed="true"]{background:#e8d8f8;color:#48345f}
+.reader-toolbar #bilingual-read{min-width:40px;padding:5px 9px;background:#e5f5ed}
+.comic-translation-layer{position:absolute;z-index:8;pointer-events:none;transform-origin:0 0;overflow:hidden;user-select:none}
+.comic-translation{position:absolute;box-sizing:border-box;font-family:"Just Cuz Bilingual","Just Cuz Cute","YouYuan","幼圆","Microsoft YaHei",sans-serif;font-weight:400;line-height:1.16;color:#101015;white-space:normal;overflow-wrap:anywhere;word-break:normal;text-wrap:pretty;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:2px 8px;pointer-events:none}
+.comic-translation-replace{border-radius:3px}
+.comic-translation-erasure{position:absolute;pointer-events:none}
+.comic-translation-on-orbit{background:transparent!important;border-color:transparent;box-shadow:none;text-shadow:3px 0 2px #fffdf4,-3px 0 2px #fffdf4,0 3px 2px #fffdf4,0 -3px 2px #fffdf4}
+.panel-bilingual-separate-lettering{filter:drop-shadow(1px 0 0 #fffdf4) drop-shadow(-1px 0 0 #fffdf4) drop-shadow(0 1px 0 #fffdf4) drop-shadow(0 -1px 0 #fffdf4)}
+.comic-translation-note{background:#fffdf4;border:2px solid #655267;border-radius:19px;padding:7px 13px;box-shadow:0 3px 0 #72567a21;color:#41304a}
+.bilingual-dialog{width:min(92vw,680px);max-height:85dvh;overflow:auto;border:2px solid #b19bbf;border-radius:20px;background:#fffdf6;color:#303841;padding:16px}
+.bilingual-dialog::backdrop{background:#33324466}
+.bilingual-dialog .dialog-header{position:sticky;top:-16px;z-index:1;background:#fffdf6;padding:6px 0 12px}
+#bilingual-text-content section{padding:12px 3px;border-top:1px dashed #d4c5db}
+.bilingual-copy-zh{font-family:"Just Cuz Bilingual","YouYuan",sans-serif;font-size:20px;line-height:1.65;margin:0 0 7px;white-space:pre-line}
+.bilingual-copy-en{font-family:"Comic Sans MS",sans-serif;font-size:14px;line-height:1.55;color:#687481;margin:0;white-space:pre-line}
+@media(max-width:650px){.reader-toolbar .language-switch button{min-width:35px;min-height:32px;padding:4px 6px;font-size:10px}.language-switch{gap:0}.reader-toolbar #bilingual-read{min-width:35px;padding:5px 7px;font-size:10px}.chapter-group{gap:4px}.reader-toolbar #open-directory{padding:6px 10px}}
+
+/* Compact manual language picker; fonts download only when used. */
+.reader-toolbar .language-switch{align-items:center;gap:3px;padding:1px 5px;color:#75538d;max-width:145px}
+.reader-toolbar .language-switch select{width:auto;max-width:118px;min-height:34px;padding:4px 17px 4px 3px;background:transparent;border:0;border-radius:10px;font-family:inherit;font-size:12px;color:inherit;cursor:pointer}
+.comic-translation:lang(ja),.bilingual-copy-localized:lang(ja){font-family:"Just Cuz Japanese","Yu Gothic",sans-serif;line-height:1.2;word-break:normal}
+.comic-translation:lang(ko),.bilingual-copy-localized:lang(ko){font-family:"Just Cuz Korean","Malgun Gothic",sans-serif;line-height:1.2;word-break:keep-all;overflow-wrap:anywhere}
+.comic-translation:lang(ru),.comic-translation:lang(fr),.bilingual-copy-localized:lang(ru),.bilingual-copy-localized:lang(fr){font-family:"Just Cuz Story Latin","Comic Sans MS",cursive;line-height:1.13;overflow-wrap:normal;hyphens:auto}
+.bilingual-copy-localized{font-family:"Just Cuz Bilingual","Comic Sans MS",sans-serif;font-size:22px;line-height:1.6;margin:0 0 7px;white-space:pre-line}
+@media(max-width:650px){.reader-toolbar .language-switch{max-width:126px}.reader-toolbar .language-switch select{max-width:104px;min-height:32px;font-size:11px;padding-right:13px}}
