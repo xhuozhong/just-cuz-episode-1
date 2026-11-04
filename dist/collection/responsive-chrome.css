@@ -1,0 +1,40 @@
+/* Q33: readable interface typography; comic lettering keeps its own fonts. */
+html:lang(en), html:lang(fr), html:lang(ru) {
+  --reader-chrome-font: "Comic Sans MS", "Segoe UI", system-ui, sans-serif;
+}
+html:lang(ja) { --reader-chrome-font: "Yu Gothic", "Meiryo", system-ui, sans-serif; }
+html:lang(ko) { --reader-chrome-font: "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif; }
+html:not(:lang(zh)) :is(.book-header,.reader-toolbar,.reader-topline,.reader-actions,.help,footer,dialog,.panel-loading-percent) {
+  font-family:var(--reader-chrome-font,system-ui,sans-serif);
+  letter-spacing:normal;
+}
+html:not(:lang(zh)) :is(.book-title h1,.book-title .eyebrow,.footer-signature) {
+  font-family:inherit;
+  letter-spacing:normal;
+}
+/* Page input retains its accessible name; the directory also lists every chapter. */
+@media (max-width:650px) {
+  .page-jump > label { display:none; }
+  .navigation-group { justify-content:space-between; }
+  .navigation-group > button { flex:none; }
+  .page-jump { justify-content:center; }
+  .page-jump input { flex:none; }
+  #chapter-select { display:none; }
+  .chapter-group { justify-content:space-between; }
+  .book-title h1 { overflow-wrap:normal; word-break:normal; }
+}
+/* Short landscape keeps the complete source page and one compact action row. */
+@media (max-height:440px) and (min-width:651px) and (max-width:1000px) {
+  .book-shell { padding:4px 10px; gap:3px; }
+  .reader-toolbar { gap:4px; flex-wrap:nowrap; }
+  .navigation-group, .chapter-group { gap:4px; }
+  .page-jump > label { display:none; }
+  .page-jump { gap:3px; }
+  .reader-toolbar button { padding:5px 7px; }
+  .chapter-group { flex:1; min-width:0; }
+  #chapter-select { min-width:80px; width:0; flex:1; }
+  .reader-actions { gap:4px; padding:2px 5px; }
+  .reader-actions button { min-height:44px; padding:4px 7px; }
+  .zoom-controls > button:first-child,.zoom-controls > button:nth-child(3) { min-height:44px; min-width:44px; }
+  #zoom-level { display:none; }
+}

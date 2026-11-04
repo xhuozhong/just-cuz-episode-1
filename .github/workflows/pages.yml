@@ -23,18 +23,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Verify page configurations and frame packages
-        run: python3 tools/pack_frames.py --streaming --verify
-      - name: Verify reader bundle matches retained sources
-        run: python3 tools/bundle_runtime.py --verify
-      - name: Verify angular preview packages
-        run: python3 tools/verify_preview_assets.py
+      - name: Verify collection assets and build bounded publication
+        run: python3 tools/stage_collection.py build --commit "$GITHUB_SHA"
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload static comic
         uses: actions/upload-pages-artifact@v4
         with:
-          path: dist
+          path: _site
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

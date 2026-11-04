@@ -16,8 +16,19 @@ def main():
     parser.add_argument('--verify', action='store_true')
     args = parser.parse_args()
     dist = args.dist.resolve(strict=True)
+    bilingual_sources = ('bilingual-data.js', 'bilingual.js')
+    bilingual_present = [(dist / name).is_file() for name in bilingual_sources]
+    assert not any(bilingual_present) or all(bilingual_present), 'Bilingual runtime/data must be present together'
+    locale_sources = ('locale-data.js', 'locale-ui.js')
+    locale_present = [(dist / name).is_file() for name in locale_sources]
+    assert not any(locale_present) or all(locale_present), 'Locale data and interface must be present together'
+    assert not any(locale_present) or all(bilingual_present), 'Localized overlays require their source-bound text data'
+    if all(bilingual_present):
+        sources = SOURCES + ('bilingual-data.js',) + (locale_sources if all(locale_present) else ()) + ('bilingual.js',)
+    else:
+        sources = SOURCES
     chunks = [b'/* Just Cuz reader: generated from the retained source files. */\n']
-    for source in SOURCES:
+    for source in sources:
         data = (dist / source).read_bytes()
         if data.startswith(b'\xef\xbb\xbf'):
             data = data[3:]
@@ -28,7 +39,7 @@ def main():
         assert output.read_bytes() == result, 'Bundle differs from its retained sources'
     else:
         output.write_bytes(result)
-    print(json.dumps({'verified': True, 'sourceCount': len(SOURCES), 'bytes': len(result),
+    print(json.dumps({'verified': True, 'sourceCount': len(sources), 'bytes': len(result),
                       'sha256': hashlib.sha256(result).hexdigest()}))
 
 if __name__ == '__main__':
