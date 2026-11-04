@@ -1,3 +1,5 @@
 # Keep the audited collection byte-identical across Windows and CI checkouts.
 dist/collection/** -text
 docs/collection-source-index.html -text
+docs/collection-lossless-protection-q34.json -text
+docs/collection-loading-q38.json -text

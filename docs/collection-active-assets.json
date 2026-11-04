@@ -3,8 +3,8 @@
   "generatedAt": "2026-11-04T06:51:24.538Z",
   "mode": "read-only active-runtime dependency inventory; no copying or upload",
   "totalFiles": 1171,
-  "totalBytes": 1387847749,
-  "totalMiB": 1323.5547533035278,
+  "totalBytes": 1387850099,
+  "totalMiB": 1323.5569944381714,
   "groups": {
     "verification-and-license": {
       "files": 6,
@@ -12,7 +12,7 @@
     },
     "runtime": {
       "files": 27,
-      "bytes": 2905402
+      "bytes": 2907752
     },
     "ui": {
       "files": 9,
@@ -409,8 +409,8 @@
     },
     {
       "source": "app.js",
-      "bytes": 24203,
-      "sha256": "9114173cc78cc17d82a484d98301c3b053a3863c42a83c10e8603d38601e38ff",
+      "bytes": 24321,
+      "sha256": "8b3fe1f75fccd9308b2d313bb8c765ade6637c23f5a5cfefd785dd3ccbb44bba",
       "groups": [
         "runtime"
       ],
@@ -420,8 +420,8 @@
     },
     {
       "source": "asset-delivery.js",
-      "bytes": 6673,
-      "sha256": "7d94d2961d668ef0344f859a6671e8c8ed7f5310ba7d9981b6bd8ae0b47a5c79",
+      "bytes": 6964,
+      "sha256": "828320d60cddf1e32fb93e012d0948a6317c2e0ebdf556364e0a53216a662c42",
       "groups": [
         "runtime"
       ],
@@ -6754,7 +6754,7 @@
     {
       "source": "index.html",
       "bytes": 10976,
-      "sha256": "b529a1acca6b009f322dcd343261fba76a6167b7acdc30863377acdb64421b53",
+      "sha256": "ca961eca3c31266dcf91dd99b53168b7485c0caa1d649ea31d908af78be7e89e",
       "groups": [
         "runtime"
       ],
@@ -6858,8 +6858,8 @@
     },
     {
       "source": "music.js",
-      "bytes": 2644,
-      "sha256": "9d10189283c17b709ca24d5b25408bea4a8b678ec2d2e23320e7e3af904ab626",
+      "bytes": 3410,
+      "sha256": "0df8466a3af6666d0673ae9c28764ee699f4cd61028f1edd75b5432ed6b759a7",
       "groups": [
         "runtime"
       ],
@@ -10798,8 +10798,8 @@
     },
     {
       "source": "reader.js",
-      "bytes": 1428816,
-      "sha256": "f529aa36318e91f080b6214f1765d2238f35991056f4f90ff35d2520988af143",
+      "bytes": 1429991,
+      "sha256": "f40a79e7d014685647bdf09535ebc808ccdaef09ce6691e3b63eb2ccb1636f90",
       "groups": [
         "runtime",
         "ui"
@@ -13411,8 +13411,8 @@
       "source": "asset-delivery.js",
       "sourceSha256": "5fb34ad5781cc052486f52f808c281417153f938f671b78e066fd10a8aa12aed",
       "sourceBytes": 5971,
-      "publishedSha256": "7d94d2961d668ef0344f859a6671e8c8ed7f5310ba7d9981b6bd8ae0b47a5c79",
-      "publishedBytes": 6673,
+      "publishedSha256": "828320d60cddf1e32fb93e012d0948a6317c2e0ebdf556364e0a53216a662c42",
+      "publishedBytes": 6964,
       "reason": "Root-reviewed external HD routing; preview remains local"
     },
     {
@@ -13427,7 +13427,7 @@
       "source": "index.html",
       "sourceSha256": "146b13eeaaa2191b3ab65be8b16f75cb5afdb956925c5452a875c04a219fcb5a",
       "sourceBytes": 10029,
-      "publishedSha256": "b529a1acca6b009f322dcd343261fba76a6167b7acdc30863377acdb64421b53",
+      "publishedSha256": "ca961eca3c31266dcf91dd99b53168b7485c0caa1d649ea31d908af78be7e89e",
       "publishedBytes": 10976,
       "reason": "Derived reader version and perf=1 opt-in bootstrap only"
     },
@@ -13443,8 +13443,8 @@
       "source": "reader.js",
       "sourceSha256": "e3d47feded164c45a9d1763609399ef073f13b9bced15b57dad57ae35cf53081",
       "sourceBytes": 1428114,
-      "publishedSha256": "f529aa36318e91f080b6214f1765d2238f35991056f4f90ff35d2520988af143",
-      "publishedBytes": 1428816,
+      "publishedSha256": "f40a79e7d014685647bdf09535ebc808ccdaef09ce6691e3b63eb2ccb1636f90",
+      "publishedBytes": 1429991,
       "reason": "Deterministic rebundle of retained reviewed sources"
     }
   ],
@@ -13550,6 +13550,59 @@
       ],
       "onlyMissingEncodingFlagChangesMappings": true,
       "publicationOverrideAllowlistUnchanged": true
+    },
+    {
+      "id": "Q38-loading-retry-and-deferred-music",
+      "approvedPublicationChanges": [
+        {
+          "source": "app.js",
+          "previousPublicationSha256": "9114173cc78cc17d82a484d98301c3b053a3863c42a83c10e8603d38601e38ff",
+          "previousPublicationBytes": 24203,
+          "publicationSha256": "8b3fe1f75fccd9308b2d313bb8c765ade6637c23f5a5cfefd785dd3ccbb44bba",
+          "publicationBytes": 24321,
+          "retainedSourceOriginSha256": "9114173cc78cc17d82a484d98301c3b053a3863c42a83c10e8603d38601e38ff",
+          "retainedSourceOriginBytes": 24203
+        },
+        {
+          "source": "asset-delivery.js",
+          "previousPublicationSha256": "7d94d2961d668ef0344f859a6671e8c8ed7f5310ba7d9981b6bd8ae0b47a5c79",
+          "previousPublicationBytes": 6673,
+          "publicationSha256": "828320d60cddf1e32fb93e012d0948a6317c2e0ebdf556364e0a53216a662c42",
+          "publicationBytes": 6964,
+          "retainedSourceOriginSha256": "5fb34ad5781cc052486f52f808c281417153f938f671b78e066fd10a8aa12aed",
+          "retainedSourceOriginBytes": 5971
+        },
+        {
+          "source": "music.js",
+          "previousPublicationSha256": "9d10189283c17b709ca24d5b25408bea4a8b678ec2d2e23320e7e3af904ab626",
+          "previousPublicationBytes": 2644,
+          "publicationSha256": "0df8466a3af6666d0673ae9c28764ee699f4cd61028f1edd75b5432ed6b759a7",
+          "publicationBytes": 3410,
+          "retainedSourceOriginSha256": "9d10189283c17b709ca24d5b25408bea4a8b678ec2d2e23320e7e3af904ab626",
+          "retainedSourceOriginBytes": 2644
+        },
+        {
+          "source": "reader.js",
+          "previousPublicationSha256": "f529aa36318e91f080b6214f1765d2238f35991056f4f90ff35d2520988af143",
+          "previousPublicationBytes": 1428816,
+          "publicationSha256": "f40a79e7d014685647bdf09535ebc808ccdaef09ce6691e3b63eb2ccb1636f90",
+          "publicationBytes": 1429991,
+          "retainedSourceOriginSha256": "e3d47feded164c45a9d1763609399ef073f13b9bced15b57dad57ae35cf53081",
+          "retainedSourceOriginBytes": 1428114
+        },
+        {
+          "source": "index.html",
+          "previousPublicationSha256": "b529a1acca6b009f322dcd343261fba76a6167b7acdc30863377acdb64421b53",
+          "previousPublicationBytes": 10976,
+          "publicationSha256": "ca961eca3c31266dcf91dd99b53168b7485c0caa1d649ea31d908af78be7e89e",
+          "publicationBytes": 10976,
+          "retainedSourceOriginSha256": "146b13eeaaa2191b3ab65be8b16f75cb5afdb956925c5452a875c04a219fcb5a",
+          "retainedSourceOriginBytes": 10029
+        }
+      ],
+      "addedByteIdenticalDependencies": [],
+      "publicationOverrideAllowlistUnchanged": true,
+      "sourceOriginPinsRetained": true
     }
   ]
 }

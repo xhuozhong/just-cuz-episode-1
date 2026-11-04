@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "id": "Q38-loading-retry-and-deferred-music",
+  "baselinePublicCommit": "caecc380a68d84733b05e991d7052431b17d4a7c",
+  "baselineLocalHead": "f6c2482387d354fcac66354f6e4cb7737d9bff83",
+  "baselineInventorySha256": "a2aab7f9cc587c22e5d6f5db241f92947744ce55e6a1a2394afd8e0a17dcd6fc",
+  "retainedQ34ProofSha256": "7fd1524944aefb4abb59993a6ff69fc0490957a3a87cfb5cdf15e4d7f3e8de92",
+  "approvedPublicationChanges": [
+    {
+      "source": "app.js",
+      "previousPublicationSha256": "9114173cc78cc17d82a484d98301c3b053a3863c42a83c10e8603d38601e38ff",
+      "previousPublicationBytes": 24203,
+      "publicationSha256": "8b3fe1f75fccd9308b2d313bb8c765ade6637c23f5a5cfefd785dd3ccbb44bba",
+      "publicationBytes": 24321,
+      "retainedSourceOriginSha256": "9114173cc78cc17d82a484d98301c3b053a3863c42a83c10e8603d38601e38ff",
+      "retainedSourceOriginBytes": 24203
+    },
+    {
+      "source": "asset-delivery.js",
+      "previousPublicationSha256": "7d94d2961d668ef0344f859a6671e8c8ed7f5310ba7d9981b6bd8ae0b47a5c79",
+      "previousPublicationBytes": 6673,
+      "publicationSha256": "828320d60cddf1e32fb93e012d0948a6317c2e0ebdf556364e0a53216a662c42",
+      "publicationBytes": 6964,
+      "retainedSourceOriginSha256": "5fb34ad5781cc052486f52f808c281417153f938f671b78e066fd10a8aa12aed",
+      "retainedSourceOriginBytes": 5971
+    },
+    {
+      "source": "music.js",
+      "previousPublicationSha256": "9d10189283c17b709ca24d5b25408bea4a8b678ec2d2e23320e7e3af904ab626",
+      "previousPublicationBytes": 2644,
+      "publicationSha256": "0df8466a3af6666d0673ae9c28764ee699f4cd61028f1edd75b5432ed6b759a7",
+      "publicationBytes": 3410,
+      "retainedSourceOriginSha256": "9d10189283c17b709ca24d5b25408bea4a8b678ec2d2e23320e7e3af904ab626",
+      "retainedSourceOriginBytes": 2644
+    },
+    {
+      "source": "reader.js",
+      "previousPublicationSha256": "f529aa36318e91f080b6214f1765d2238f35991056f4f90ff35d2520988af143",
+      "previousPublicationBytes": 1428816,
+      "publicationSha256": "f40a79e7d014685647bdf09535ebc808ccdaef09ce6691e3b63eb2ccb1636f90",
+      "publicationBytes": 1429991,
+      "retainedSourceOriginSha256": "e3d47feded164c45a9d1763609399ef073f13b9bced15b57dad57ae35cf53081",
+      "retainedSourceOriginBytes": 1428114
+    },
+    {
+      "source": "index.html",
+      "previousPublicationSha256": "b529a1acca6b009f322dcd343261fba76a6167b7acdc30863377acdb64421b53",
+      "previousPublicationBytes": 10976,
+      "publicationSha256": "ca961eca3c31266dcf91dd99b53168b7485c0caa1d649ea31d908af78be7e89e",
+      "publicationBytes": 10976,
+      "retainedSourceOriginSha256": "146b13eeaaa2191b3ab65be8b16f75cb5afdb956925c5452a875c04a219fcb5a",
+      "retainedSourceOriginBytes": 10029
+    }
+  ],
+  "bundleSourcePins": [
+    {
+      "source": "manifest.js",
+      "bytes": 636798,
+      "sha256": "dc8cdc347d415cd8fc23c4fb9fcb6f9d37b5aa47dcbb6e852493806a1a514304"
+    },
+    {
+      "source": "orbit-seek.js",
+      "bytes": 1122,
+      "sha256": "4bafaab8ce1cacbe047261c75a814bcfbc4124ddc832cc92892d2eab3e8c1032"
+    },
+    {
+      "source": "orbit-inertia.js",
+      "bytes": 2230,
+      "sha256": "bd9eca0e9bd5a61e5ff32446be058d4e79c2f00dc271335593aed394aea811ea"
+    },
+    {
+      "source": "frame-sequences.js",
+      "bytes": 17243,
+      "sha256": "fdfc110ccfdd6f32db36287dc759572e6f2a9d0fe4be12552d2afe80f6a5117d"
+    },
+    {
+      "source": "preview-sequences.js",
+      "bytes": 276318,
+      "sha256": "f010906985bb00fb55715995f430d95a37cd1dba61aeba65f6bbd41481223982"
+    },
+    {
+      "source": "delivery-config.js",
+      "bytes": 215,
+      "sha256": "728a6152ad860d9583a16191d2cb2992d7511e50059400c33d292796c800afa5"
+    },
+    {
+      "source": "asset-delivery.js",
+      "bytes": 6964,
+      "sha256": "828320d60cddf1e32fb93e012d0948a6317c2e0ebdf556364e0a53216a662c42"
+    },
+    {
+      "source": "orbit-frame-cache.js",
+      "bytes": 41453,
+      "sha256": "5e9989c57c343b5e6e42e76bd6948ac7d6e92598cdb89d771bb471f2149888e1"
+    },
+    {
+      "source": "interaction-layouts.js",
+      "bytes": 14509,
+      "sha256": "8bf80016811235abb2d742370bd420e1331368600752ca6c2ef3673e1d6e6067"
+    },
+    {
+      "source": "protection-resources.js",
+      "bytes": 43765,
+      "sha256": "bfa0bcc0ed448b927e64b9a6609b9748aa52bb7754b2840d1e5bb14e4250e361"
+    },
+    {
+      "source": "panel-player.js",
+      "bytes": 65551,
+      "sha256": "85ade0363adf417a3103a32d8649a89cc9eeadc6e0ac4878e71e39a85d6f0965"
+    },
+    {
+      "source": "page-frame-loader.js",
+      "bytes": 11601,
+      "sha256": "363df389523bc0653b51b989c9af4c1caad3228f173d9db3a171a7ed1c9d016a"
+    },
+    {
+      "source": "app.js",
+      "bytes": 24321,
+      "sha256": "8b3fe1f75fccd9308b2d313bb8c765ade6637c23f5a5cfefd785dd3ccbb44bba"
+    },
+    {
+      "source": "panel-loading.js",
+      "bytes": 9714,
+      "sha256": "760c9ba745c0e14a3c3798632d320dd64c97ed11fd21f247394bd9b8f444f00c"
+    },
+    {
+      "source": "reader-decor.js",
+      "bytes": 1105,
+      "sha256": "b4e6521971010dc771d553792588ca6e3c9c0ef55f8084da6dfee26642eed9b6"
+    },
+    {
+      "source": "music.js",
+      "bytes": 3410,
+      "sha256": "0df8466a3af6666d0673ae9c28764ee699f4cd61028f1edd75b5432ed6b759a7"
+    },
+    {
+      "source": "bilingual-data.js",
+      "bytes": 150450,
+      "sha256": "51a89bd992b6ccf1eff7459671e9143adf200ba03c7364b0d6c1b9372cae6c02"
+    },
+    {
+      "source": "locale-data.js",
+      "bytes": 74234,
+      "sha256": "71439f06bdeb8641510d2cf159e8b07ed56843efacf3c70a7a926e5e0c5d5c64"
+    },
+    {
+      "source": "locale-ui.js",
+      "bytes": 36972,
+      "sha256": "72afd73055f2b9d869222ef1179c1c5b5d3e34efd7a9b15e1f5726e878646c7c"
+    },
+    {
+      "source": "bilingual.js",
+      "bytes": 11438,
+      "sha256": "340d3b0fda427096bb089fade137b24b62aa8e61d26f7cc3eb818ada3b352bc9"
+    }
+  ],
+  "bundleSourceCount": 20,
+  "unchangedActiveFiles": 1166,
+  "unchangedActiveInventorySha256": "b6dabd5909b7342638d08a4787632995d6dcf4046f50e581d0018582d214ad65",
+  "scope": {
+    "explicitRetryResetsFailedRoutes": true,
+    "twoReaderRetryHooks": true,
+    "musicStartsAfterResolvedOriginalReady": true,
+    "previewMetadataShardingIncluded": false,
+    "cssPagesFramesVideoAndBindingDataUnchanged": true,
+    "historicalSourceOriginPinsRetained": true
+  },
+  "verificationBoundary": "Controlled source execution plus complete asset/hash/ORBF verification; no new browser rendering, screenshots, LCP, CLS, INP or live latency measurement."
+}

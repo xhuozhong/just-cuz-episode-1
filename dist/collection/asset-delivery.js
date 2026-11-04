@@ -113,6 +113,12 @@
     const base = responses.get(response);
     if (base && base !== local) disable(base);
   }
-  window.ComicAssetDelivery = Object.freeze({fetch:fetchAsset, markFailed,
+  // Explicit reader retry starts a new attempt. Hash verification still happens
+  // in the frame cache; no failed payload is accepted by clearing route state.
+  function retryFailed() {
+    disabled.clear();
+    selected = externalHd ? (externalBases[0] || null) : local;
+  }
+  window.ComicAssetDelivery = Object.freeze({fetch:fetchAsset, markFailed, retryFailed,
     get state() { return Object.freeze({selected, settled, candidateCount:bases.length, disabledCount:disabled.size}); }});
 })();

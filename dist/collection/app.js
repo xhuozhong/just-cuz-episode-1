@@ -214,7 +214,10 @@
     Promise.resolve().then(() => { panelStatusQueued = false; updatePanelStatus(); });
   }
   panelLayer.addEventListener('comic-panel-status', queuePanelStatus);
-  if ($('retry-interaction')) $('retry-interaction').addEventListener('click', () => showPage(current));
+  if ($('retry-interaction')) $('retry-interaction').addEventListener('click', () => {
+    window.ComicAssetDelivery?.retryFailed?.();
+    showPage(current);
+  });
 
   function clearPlayers() {
     players.forEach(player => player.destroy()); players = []; panelLayer.replaceChildren(); panelControls.replaceChildren(); panelControls.hidden = true;
@@ -337,7 +340,10 @@
     showPage(field.value);
   });
   $('chapter-select').addEventListener('change', event => showPage(event.target.value));
-  $('retry-page').addEventListener('click', () => showPage(current));
+  $('retry-page').addEventListener('click', () => {
+    window.ComicAssetDelivery?.retryFailed?.();
+    showPage(current);
+  });
   window.addEventListener('hashchange', () => {
     const match = location.hash.match(/^#page=(\d+)$/);
     if (match && Number(match[1]) !== current) showPage(Number(match[1]));
