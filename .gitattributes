@@ -1,0 +1,3 @@
+# Keep the audited collection byte-identical across Windows and CI checkouts.
+dist/collection/** -text
+docs/collection-source-index.html -text
