@@ -18,6 +18,7 @@ Q34_SOURCE_PINS={
 
 Q38_PROOF_SHA='6a0559822b081c36e08156450e7770a23fc973a6473f3063936ae595d6adfca6'
 Q34_PROOF_SHA='7fd1524944aefb4abb59993a6ff69fc0490957a3a87cfb5cdf15e4d7f3e8de92'
+Q39_PROOF_SHA='dd75f5e5d25f22e45e3d9250a38e47adf142c5b5e019567d397409fc79fb8ca8'
 Q38_PUBLICATION_PINS={'app.js': ('9114173cc78cc17d82a484d98301c3b053a3863c42a83c10e8603d38601e38ff', '8b3fe1f75fccd9308b2d313bb8c765ade6637c23f5a5cfefd785dd3ccbb44bba'), 'asset-delivery.js': ('7d94d2961d668ef0344f859a6671e8c8ed7f5310ba7d9981b6bd8ae0b47a5c79', '828320d60cddf1e32fb93e012d0948a6317c2e0ebdf556364e0a53216a662c42'), 'music.js': ('9d10189283c17b709ca24d5b25408bea4a8b678ec2d2e23320e7e3af904ab626', '0df8466a3af6666d0673ae9c28764ee699f4cd61028f1edd75b5432ed6b759a7'), 'reader.js': ('f529aa36318e91f080b6214f1765d2238f35991056f4f90ff35d2520988af143', 'f40a79e7d014685647bdf09535ebc808ccdaef09ce6691e3b63eb2ccb1636f90'), 'index.html': ('b529a1acca6b009f322dcd343261fba76a6167b7acdc30863377acdb64421b53', 'ca961eca3c31266dcf91dd99b53168b7485c0caa1d649ea31d908af78be7e89e')}
 
 def digest(data):return hashlib.sha256(data).hexdigest()
@@ -169,7 +170,7 @@ def protection_check(dist,inventory,files,media):
     assert png_bytes-webp_bytes==proof['savings']['savedUniqueURLBytes']==15004680
     return {'bindings':len(active),'uniqueWebpFiles':len(webps),'webpBytes':webp_bytes,'pngFallbacks':len(pngs),'savedProtectionBytes':png_bytes-webp_bytes,'localRGBAProofRetained':True,'ciDecodedRGBA':False,'stalePage85MappingRejected':True}
 
-def loading_update_check(dist,inventory,files):
+def loading_update_check(dist,inventory,files,advance):
     """Verify the exact Q38 patch, the 20 retained sources and unchanged assets."""
     raw=(REPO/'docs/collection-loading-q38.json').read_bytes()
     assert digest(raw)==Q38_PROOF_SHA, 'Unreviewed Q38 proof change'
@@ -186,7 +187,7 @@ def loading_update_check(dist,inventory,files):
         row=changes[source];record=files[source]
         assert row['previousPublicationSha256']==old and row['publicationSha256']==new
         assert record['sha256']==new and record['bytes']==row['publicationBytes']
-        assert digest((dist/source).read_bytes())==new
+        historical_bytes_check(dist,source,new,row['publicationBytes'],advance)
         # Existing source-origin pins describe the prior D input. Do not silently
         # rewrite them to the publication output or weaken Q34 provenance.
         if 'sourceSha256' in record:
@@ -196,13 +197,59 @@ def loading_update_check(dist,inventory,files):
     assert len(pins)==proof['bundleSourceCount']==20
     assert len({row['source'] for row in pins})==20
     for row in pins:
-        data=(dist/row['source']).read_bytes()
-        assert digest(data)==row['sha256'] and len(data)==row['bytes']
+        historical_bytes_check(dist,row['source'],row['sha256'],row['bytes'],advance)
     unchanged=[{'source':r['source'],'bytes':r['bytes'],'sha256':r['sha256']} for r in inventory['files'] if r['source'] not in changes]
     assert len(unchanged)==proof['unchangedActiveFiles']
     assert digest(json.dumps(unchanged,separators=(',',':'),sort_keys=True).encode())==proof['unchangedActiveInventorySha256'], 'Non-Q38 active assets changed'
     assert digest((REPO/'docs/collection-lossless-protection-q34.json').read_bytes())==proof['retainedQ34ProofSha256']==Q34_PROOF_SHA
     return {'id':proof['id'],'changedRuntimeFiles':len(changes),'sourcePins':len(pins),'unchangedActiveFiles':len(unchanged),'historicalQ34ProofExact':True}
+
+def historical_bytes_check(dist,source,old_sha,old_bytes,advance):
+    """Only the pinned Q39 patch may advance a byte pin in the frozen Q38 proof."""
+    data=(dist/source).read_bytes()
+    if source in advance:
+        row=advance[source]
+        assert row['previousPublicationSha256']==old_sha and row['previousPublicationBytes']==old_bytes
+        assert digest(data)==row['publicationSha256'] and len(data)==row['publicationBytes']
+    else:
+        assert digest(data)==old_sha and len(data)==old_bytes
+
+def preview_metadata_check(dist,inventory,files):
+    raw=(REPO/'docs/collection-preview-metadata-q39.json').read_bytes()
+    assert digest(raw)==Q39_PROOF_SHA,'Unreviewed Q39 proof change'
+    proof=json.loads(raw)
+    baseline_raw=(REPO/'docs/collection-q38-baseline-inventory.json').read_bytes()
+    assert digest(baseline_raw)==proof['baselineInventorySha256'],'Historical Q38 inventory changed'
+    baseline=json.loads(baseline_raw);old_files={r['source']:r for r in baseline['files']}
+    assert len(files)==len(old_files)==len(baseline['files'])==1171 and set(files)==set(old_files)
+    assert proof['retainedQ38ProofSha256']==Q38_PROOF_SHA==digest((REPO/'docs/collection-loading-q38.json').read_bytes())
+    assert proof['retainedQ34ProofSha256']==Q34_PROOF_SHA==digest((REPO/'docs/collection-lossless-protection-q34.json').read_bytes())
+    assert proof['baselinePreviewSha256']==old_files['preview-sequences.js']['sha256']==digest((REPO/'docs/collection-q38-preview-sequences.js').read_bytes())
+    assert inventory['reviewedSourceUpdates'][:-1]==baseline['reviewedSourceUpdates']
+    update=inventory['reviewedSourceUpdates'][-1]
+    assert update['id']==proof['id']=='Q39-current-page-preview-metadata'
+    assert update['approvedPublicationChanges']==proof['approvedPublicationChanges'] and update['addedByteIdenticalDependencies']==[]
+    assert update['publicationOverrideAllowlistUnchanged'] is True and update['sourceOriginPinsRetained'] is True
+    expected={'frame-sequences.js','preview-sequences.js','page-frame-loader.js','orbit-frame-cache.js','reader.js','index.html'}|{f'frame-config/page-{n:03d}.json' for n in range(1,86)}
+    changes={r['source']:r for r in proof['approvedPublicationChanges']}
+    assert len(changes)==len(proof['approvedPublicationChanges'])==91 and set(changes)==expected
+    for source,old in old_files.items():
+        expected_record=dict(old)
+        if source in changes:
+            row=changes[source]
+            assert row['previousPublicationSha256']==old['sha256'] and row['previousPublicationBytes']==old['bytes']
+            expected_record.update(sha256=row['publicationSha256'],bytes=row['publicationBytes'])
+            assert old['sha256']!=row['publicationSha256']
+        assert files[source]==expected_record,'Unreviewed record/origin change: '+source
+    pins=proof['bundleSourcePins'];previous_pins=json.loads((REPO/'docs/collection-loading-q38.json').read_bytes())['bundleSourcePins']
+    assert len(pins)==proof['bundleSourceCount']==20 and {r['source'] for r in pins}=={r['source'] for r in previous_pins}
+    for row in pins:
+        data=(dist/row['source']).read_bytes()
+        assert digest(data)==row['sha256'] and len(data)==row['bytes']
+    initial=js_data(dist/'preview-sequences.js')
+    assert initial=={'schemaVersion':1,'delivery':'page-frame-config','entries':[]}
+    assert proof['scope']=={'pages':85,'previewEntries':110,'anglesPerPreview':24,'initialPreviewEntries':0,'additionalMetadataRequests':0,'originalsFramesVideosAudioCssLayoutsUnchanged':True,'stageOnly':True}
+    return {'id':proof['id'],'changedActiveFiles':len(changes),'initialPreviewEntries':0,'previewEntriesCoLoaded':110,'anglesPerPreview':24,'additionalMetadataRequests':0,'unchangedActiveFiles':len(files)-len(changes),'historicalQ38AndQ34ProofsExact':True},baseline,changes
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--dist',type=Path,default=REPO/'dist/collection');parser.add_argument('--inventory',type=Path,default=REPO/'docs/collection-active-assets.json');args=parser.parse_args()
@@ -225,7 +272,9 @@ def main():
         assert (dist/'index.html').read_bytes().decode('utf-8')==expected_index,'Unreviewed index mutation'
         config=js_data(dist/'delivery-config.js')
         assert config=={'schemaVersion':1,'mirrors':[],'probe':{'source':'delivery-probe.bin','byteLength':16384,'sha256':files['delivery-probe.bin']['sha256']}}
-    loading_update=loading_update_check(dist,inventory,files)
+    metadata_update,baseline,advance=preview_metadata_check(dist,inventory,files)
+    baseline_files={record['source']:record for record in baseline['files']}
+    loading_update=loading_update_check(dist,baseline,baseline_files,advance)
     total=0
     for source,record in files.items():
         data=safe(dist,source).read_bytes();total+=len(data)
@@ -246,9 +295,12 @@ def main():
         assert page['source']==f'pages/page-{number:03d}.jpg' and digest(safe(dist,page['source']).read_bytes())==page['sha256']
         for source in page.get('panelSources',[]):assert source['source'] in files
     for episode in (1,2,3):assert f'audio/episode-0{episode}-background-web.m4a' in files
-    protection=protection_check(dist,inventory,files,media)
+    protection=protection_check(dist,baseline,baseline_files,media)
     index=js_data(dist/'frame-sequences.js');assert index['schemaVersion']==1 and len(index['pages'])==85
-    sequences={};hd_frames=hd_bytes=hd_packs=0
+    sequences={};preview_entries=[];hd_frames=hd_bytes=hd_packs=0
+    original_preview=js_data(REPO/'docs/collection-q38-preview-sequences.js')
+    original_previews={entry['panelId']:entry for entry in original_preview['entries']}
+    assert len(original_previews)==len(original_preview['entries'])==110
     canonical=json.loads((dist/'frame-sequences.json').read_text(encoding='utf-8-sig'))
     canonical_entries={entry['panelId']:entry for entry in canonical['entries']}
     for page_entry in index['pages']:
@@ -256,6 +308,14 @@ def main():
         assert digest(raw)==page_entry['sha256'] and source in files
         page=pages[Path(source).stem];assert page_entry['sourcePageSha256']==page['sha256']
         config=json.loads(raw);assert config['schemaVersion']==1
+        assert config['pageId']==page['id'] and config['sourcePageSha256']==page['sha256']
+        previews=config['previews'];assert previews['schemaVersion']==1 and previews['pageId']==page['id'] and previews['sourcePageSha256']==page['sha256']
+        assert len(previews['entries'])==len(config['entries'])
+        assert {entry['panelId'] for entry in previews['entries']}=={entry['panelId'] for entry in config['entries']}
+        for preview_entry in previews['entries']:
+            assert preview_entry==original_previews[preview_entry['panelId']],'Preview metadata changed during sharding'
+            assert len(preview_entry['indices'])==24
+        preview_entries.extend(previews['entries'])
         for entry in config['entries']:
             identifier=entry['panelId'];assert identifier not in sequences and entry==canonical_entries[identifier]
             bound_page,panel,binding=media[identifier];actual=panel['actualMedia']
@@ -273,7 +333,7 @@ def main():
             assert covered==set(range(entry['frameCount']))
             sequences[identifier]=entry
     assert set(sequences)==set(canonical_entries)
-    preview=js_data(dist/'preview-sequences.js');assert preview['schemaVersion']==1
+    preview={'schemaVersion':1,'entries':preview_entries};assert len(preview_entries)==110
     seen=set();preview_frames=preview_bytes=0
     for entry in preview['entries']:
         identifier=entry['panelId'];assert identifier not in seen;seen.add(identifier)
@@ -289,6 +349,7 @@ def main():
     subprocess.run([sys.executable,str(REPO/'tools/bundle_runtime.py'),'--dist',str(dist),'--verify'],check=True)
     report={'verified':True,'loadingUpdate':loading_update,'files':len(files),'bytes':total,'pages':85,'allThreeAudioTracks':True,'boundMedia':len(media),'sequences':len(sequences),'hdPacks':hd_packs,'hdFrames':hd_frames,'hdBytes':hd_bytes,'previewPacks':len(seen),'previewFrames':preview_frames,'previewBytes':preview_bytes,'allSelectedFilesSHA256Verified':True,'allPackRowsSHA256AndDimensionsVerified':True,'formalWholeBookQualityAccepted':False}
     report['losslessProtection']=protection
+    report['previewMetadata']=metadata_update
     print(json.dumps(report))
 
 if __name__=='__main__':main()

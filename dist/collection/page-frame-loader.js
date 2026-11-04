@@ -112,7 +112,39 @@
       seen.add(entry.panelId);
     }
     if (required.some(panel => !seen.has(panel.id))) throw new Error('Current page frames missing required media');
+    if (window.COMIC_FRAME_INDEX) validatePreviews(config, page, available);
     return config;
+  }
+  function validatePreviews(config, page, available) {
+    const previews = config.previews;
+    if (config.pageId !== page.id || config.sourcePageSha256 !== page.sha256
+      || !previews || previews.schemaVersion !== 1 || previews.pageId !== page.id || previews.sourcePageSha256 !== page.sha256
+      || !Array.isArray(previews.entries) || previews.entries.length !== config.entries.length) throw new Error('Invalid current page preview catalog');
+    const seen = new Set();
+    for (const entry of previews.entries) {
+      const sequence = entry && config.entries.find(item => item.panelId === entry.panelId);
+      const panel = sequence && available.find(item => item.id === entry.panelId), pack = entry && entry.pack;
+      if (!sequence || !panel || seen.has(entry.panelId)
+        || !['sourcePageSha256','mediaSha256','videoSource','frameCount','sourceWidth','sourceHeight','duration'].every(key => entry[key] === sequence[key])
+        || ((panel.regionMediaOverride || entry.regionMediaOverrideBinding !== undefined)
+          && !(window.ComicPanelPlayer && window.ComicPanelPlayer.regionMediaCacheBinding(panel,page,entry)))
+        || !Number.isSafeInteger(entry.width) || entry.width < 1 || entry.width > sequence.width
+        || !Number.isSafeInteger(entry.height) || entry.height < 1 || entry.height > sequence.height
+        || Math.max(entry.width,entry.height) > 480 || Math.abs((entry.width / entry.height) / (sequence.width / sequence.height) - 1) > .006
+        || !Array.isArray(entry.indices) || ![24,32].includes(entry.indices.length) || new Set(entry.indices).size !== entry.indices.length
+        || !entry.indices.every(index => Number.isSafeInteger(index) && index >= 0 && index < sequence.frameCount)
+        || !Array.from({length:entry.indices.length},(_,i) => Math.floor(i * sequence.frameCount / entry.indices.length + .5) % sequence.frameCount).every(index => entry.indices.includes(index))
+        || !pack || !relative(pack.source) || !/^preview-packs\/.+\.orbf$/i.test(pack.source) || !sha(pack.sha256)
+        || !Number.isSafeInteger(pack.byteLength) || !Array.isArray(pack.indices)
+        || pack.indices.length !== entry.indices.length || !pack.indices.every((index,row) => index === entry.indices[row])
+        || !Array.isArray(pack.frameBytes) || !Array.isArray(pack.frameSha256)
+        || pack.frameBytes.length !== pack.indices.length || pack.frameSha256.length !== pack.indices.length
+        || !pack.frameBytes.every(length => Number.isSafeInteger(length) && length >= 12 && length <= 0xffffffff) || !pack.frameSha256.every(sha)
+        || pack.frameBytes.reduce((sum,length) => sum + length,12 + pack.indices.length * 8) !== pack.byteLength)
+        throw new Error('Current page previews do not match bound media');
+      seen.add(entry.panelId);
+    }
+    if (config.entries.some(entry => !seen.has(entry.panelId))) throw new Error('Current page previews missing required frames');
   }
   function freeze(value) {
     if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.values(value).forEach(freeze); Object.freeze(value); }

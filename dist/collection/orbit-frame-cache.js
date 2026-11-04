@@ -48,6 +48,7 @@
     const config = window.COMIC_FRAME_SEQUENCES, media = panel && panel.actualMedia;
     if (!config || config.schemaVersion !== 1 || !Array.isArray(config.entries) || !media
       || !page || !sha(page.sha256) || !sha(media.sha256) || !relative(panel.video)) return null;
+    if (window.COMIC_FRAME_INDEX && (config.pageId !== page.id || config.sourcePageSha256 !== page.sha256)) return null;
     const matches = config.entries.filter(entry => entry && entry.panelId === panel.id);
     if (matches.length !== 1) return null;
     const entry = matches[0];
@@ -95,8 +96,10 @@
     return Object.freeze({...entry, frames:Object.freeze(entry.frames.slice()), packs});
   }
   function boundPreview(panel, page, sequence) {
-    const config = window.COMIC_PREVIEW_SEQUENCES;
+    const frames = window.COMIC_FRAME_SEQUENCES;
+    const config = window.COMIC_FRAME_INDEX ? frames && frames.previews : window.COMIC_PREVIEW_SEQUENCES;
     if (!sequence.packs || !config || config.schemaVersion !== 1 || !Array.isArray(config.entries)) return null;
+    if (window.COMIC_FRAME_INDEX && (config.pageId !== page.id || config.sourcePageSha256 !== page.sha256)) return null;
     const matches = config.entries.filter(entry => entry && entry.panelId === panel.id);
     if (matches.length !== 1) return null;
     const entry = matches[0], pack = entry.pack;
