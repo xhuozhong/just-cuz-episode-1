@@ -13,7 +13,8 @@ REPO = Path(__file__).resolve().parents[1]
 COLLECTION = REPO / 'dist/collection'
 INVENTORY = REPO / 'docs/collection-active-assets.json'
 DELIVERY_SHA = '7d94d2961d668ef0344f859a6671e8c8ed7f5310ba7d9981b6bd8ae0b47a5c79'
-ADAPTIVE_DELIVERY_SHA = '4f26e4aefa02471e3010197e27cce71166b06471c8ed967f72cff4da4e207bd3'
+ADAPTIVE_DELIVERY_SHA = '8740d272f9a7f0648527a58172fe91f2da93dacef8d482a7902d4a5d90121a02'
+ADAPTIVE_CACHE_SHA = '9c60ef841e5162d1f7eb7e2f6b5084827a86fb8b1fe0fce39449e3a8de0d34b1'
 OVERRIDE_FILES = {'asset-delivery.js','delivery-config.js','reader.js','index.html','perf-diagnostics.js'}
 
 def digest(data): return hashlib.sha256(data).hexdigest()
@@ -132,6 +133,9 @@ def build_site(args):
     }
     (target/'delivery-config.js').write_text('window.COMIC_DELIVERY_CONFIG = Object.freeze('+json.dumps(config,separators=(',',':'))+');\n',encoding='utf-8',newline='\n')
     (target/'asset-delivery.js').write_bytes(adaptive)
+    adaptive_cache=(REPO/'tools/adaptive-frame-cache.js').read_bytes()
+    assert digest(adaptive_cache)==ADAPTIVE_CACHE_SHA, 'Adaptive frame cache differs from reviewed source'
+    (target/'orbit-frame-cache.js').write_bytes(adaptive_cache)
     subprocess.run([sys.executable,str(REPO/'tools/bundle_runtime.py'),'--dist',str(target)],check=True)
     index=(target/'index.html').read_text(encoding='utf-8')
     reader_sha=digest((target/'reader.js').read_bytes())
@@ -147,6 +151,9 @@ def build_site(args):
         if record['source']=='asset-delivery.js':
             assert digest(safe(target,record['source']).read_bytes())==ADAPTIVE_DELIVERY_SHA
             continue
+        if record['source']=='orbit-frame-cache.js':
+            assert digest(safe(target,record['source']).read_bytes())==ADAPTIVE_CACHE_SHA
+            continue
         if record['source'].startswith('frame-packs/') or record['source'] in {'delivery-config.js','reader.js','index.html'}:continue
         assert digest(safe(target,record['source']).read_bytes())==record['sha256'],'Artifact changed: '+record['source']
     subprocess.run([sys.executable,str(REPO/'tools/bundle_runtime.py'),'--dist',str(target),'--verify'],check=True)
@@ -156,7 +163,7 @@ def build_site(args):
     assert actual<1_000_000_000, 'Published site exceeds conservative decimal 1 GB budget'
     assert not (target/'frame-packs').exists()
     report={'commit':args.commit,'filesCopied':count,'siteBytes':actual,'externalHdPackCount':inventory['groups']['hd-frame-packs']['files'],'externalHdBytes':inventory['groups']['hd-frame-packs']['bytes'],'readerSha256':reader_sha,'diagnosticsOptIn':'id="comic-performance-opt-in"' in index,'publicPrefix':'collection/','siteDirectory':str(output.relative_to(REPO))}
-    report['assetDelivery']={'source':'tools/adaptive-asset-delivery.js','sha256':ADAPTIVE_DELIVERY_SHA,'selection':'verified-16KiB-probe','probeWaitLimitMs':1200,'mirrors':config['mirrors'],'originalSourceInventoryRetained':True,'stableMediaSource':True,'mediaOriginProofSha256':digest((REPO/'docs/collection-media-origin.json').read_bytes())}
+    report['assetDelivery']={'source':'tools/adaptive-asset-delivery.js','sha256':ADAPTIVE_DELIVERY_SHA,'selection':'verified-probe-and-current-page-packet-goodput','cacheSource':'tools/adaptive-frame-cache.js','cacheSha256':ADAPTIVE_CACHE_SHA,'extraHdSpeedTestDownloads':0,'sharedPacketOriginPinning':True,'probeWaitLimitMs':1200,'mirrors':config['mirrors'],'originalSourceInventoryRetained':True,'stableMediaSource':True,'mediaOriginProofSha256':digest((REPO/'docs/collection-media-origin.json').read_bytes())}
     (output/'collection-release.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8',newline='\n')
     print(json.dumps(report))
 

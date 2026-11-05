@@ -23,6 +23,7 @@
   const externalBases = bases.filter(base => base !== local)
     .sort((a, b) => Number(raw(new URL(b))) - Number(raw(new URL(a))));
   const disabled = new Set(), responses = new WeakMap();
+  const sampled = new Set(), transferStats = new Map(), packetRoutes = new Map();
   const routeCandidates = externalHd ? externalBases : bases;
   let selected = externalHd ? (externalBases[0] || null) : local;
   let settled = routeCandidates.length <= 1, started = 0, routing = null, generation = 0;
@@ -97,8 +98,45 @@
       if (signal && abort) signal.removeEventListener('abort', abort);
     }
   }
+  // The first required HD packets sample the existing origins once each.
+  // These are already-demanded packets, not extra synthetic speed downloads.
+  function hdRoute(checksum) {
+    const eligible = externalBases.filter(base => !disabled.has(base));
+    if (!eligible.length) return null;
+    // Panels can share identical packets. Preserve the same URL so the browser
+    // can coalesce concurrent transfers and reuse its existing HTTP cache.
+    const retained = packetRoutes.get(checksum);
+    if (retained && eligible.includes(retained)) return retained;
+    let choice = selected && eligible.includes(selected) ? selected : eligible[0];
+    if (sampled.size) choice = eligible.find(base => !sampled.has(base)) || choice;
+    sampled.add(choice);
+    packetRoutes.set(checksum, choice);
+    if (packetRoutes.size > 512) packetRoutes.delete(packetRoutes.keys().next().value);
+    return choice;
+  }
+  // The frame cache calls this only after the complete packet SHA has passed.
+  // Do not score previews, corrupt, cancelled, stale or near-instant cached reads.
+  function recordVerified(response, bytes) {
+    const entry = responses.get(response);
+    if (!entry || entry.epoch !== generation || entry.reported || disabled.has(entry.base)
+      || !entry.source.startsWith('frame-packs/') || !Number.isSafeInteger(bytes)
+      || bytes < 65536 || bytes > 25 * 1024 * 1024) return;
+    entry.reported = true;
+    const elapsed = performance.now() - entry.started;
+    if (elapsed < 250 || elapsed > 300000) return;
+    const rate = bytes * 1000 / elapsed, prior = transferStats.get(entry.base);
+    transferStats.set(entry.base, {samples:(prior ? prior.samples : 0) + 1,
+      bytesPerSecond:prior ? prior.bytesPerSecond * 0.5 + rate * 0.5 : rate});
+    const eligible = externalBases.filter(base => !disabled.has(base));
+    // Compare completed, verified transfers on every currently eligible origin.
+    if (eligible.length < 2 || eligible.some(base => !transferStats.has(base))) return;
+    const best = eligible.reduce((a, b) => transferStats.get(a).bytesPerSecond >= transferStats.get(b).bytesPerSecond ? a : b);
+    const current = transferStats.get(selected);
+    if (!current || best !== selected && transferStats.get(best).bytesPerSecond > current.bytesPerSecond * 1.25) selected = best;
+  }
   async function requestFrom(base, source, checksum, init) {
     const controller = new AbortController(), signal = init.signal;
+    const entry = {base, source, epoch:generation, started:performance.now(), reported:false};
     if (signal && signal.aborted) throw cancelled();
     const abort = () => controller.abort();
     if (signal) signal.addEventListener('abort', abort, {once:true});
@@ -110,7 +148,7 @@
       const response = await fetch(new URL(path + '?sha256=' + checksum, base).href,
         {...init, signal:controller.signal, mode:'cors', credentials:'omit'});
       if (!response.ok) { stopBody(response); throw new Error('Asset delivery HTTP ' + response.status); }
-      responses.set(response, base);
+      responses.set(response, entry);
       return response;
     } catch (error) {
       if (signal) signal.removeEventListener('abort', abort);
@@ -122,7 +160,7 @@
     if (init.signal && init.signal.aborted) throw cancelled();
     if (!externalHd || source.startsWith('frame-packs/')) await waitForRouting(init.signal);
     const candidates = externalHd
-      ? (source.startsWith('frame-packs/') ? [selected, ...externalBases] : [local, selected, ...externalBases])
+      ? (source.startsWith('frame-packs/') ? [hdRoute(checksum.toLowerCase()), ...externalBases] : [local, selected, ...externalBases])
       : [selected, local, ...bases];
     const order = [...new Set(candidates)].filter(base => base && (!disabled.has(base) || base === local));
     let last;
@@ -144,8 +182,8 @@
     if (selected === base) selected = externalHd ? (externalBases.find(candidate => !disabled.has(candidate)) || null) : local;
   }
   function markFailed(response) {
-    const base = responses.get(response);
-    if (base && base !== local) disable(base);
+    const entry = responses.get(response);
+    if (entry && entry.epoch === generation && entry.base !== local) disable(entry.base);
   }
   // Explicit reader retry starts a new attempt. Hash verification still happens
   // in the frame cache; no failed payload is accepted by clearing route state.
@@ -154,11 +192,12 @@
     if (finishRouting) finishRouting();
     for (const controller of probeControllers.values()) controller.abort();
     probeControllers = new Map(); finishRouting = null; routing = null;
-    disabled.clear();
+    disabled.clear(); sampled.clear(); transferStats.clear(); packetRoutes.clear();
     selected = externalHd ? (externalBases[0] || null) : local;
     settled = routeCandidates.length <= 1;
     if (!externalHd) void beginRouting();
   }
-  window.ComicAssetDelivery = Object.freeze({fetch:fetchAsset, markFailed, retryFailed,
-    get state() { return Object.freeze({selected, settled, candidateCount:bases.length, disabledCount:disabled.size}); }});
+  window.ComicAssetDelivery = Object.freeze({fetch:fetchAsset, markFailed, retryFailed, recordVerified,
+    get state() { return Object.freeze({selected, settled, candidateCount:bases.length, disabledCount:disabled.size,
+      transferSamples:Object.freeze(Array.from(transferStats, ([base, value]) => Object.freeze({base, ...value})))}); }});
 })();

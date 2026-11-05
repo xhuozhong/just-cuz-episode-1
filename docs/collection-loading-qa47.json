@@ -1,0 +1,57 @@
+{
+  "atUTC": "2026-11-05T04:42:42.059988+00:00",
+  "deliverySha256": "8740d272f9a7f0648527a58172fe91f2da93dacef8d482a7902d4a5d90121a02",
+  "cacheSha256": "9c60ef841e5162d1f7eb7e2f6b5084827a86fb8b1fe0fce39449e3a8de0d34b1",
+  "controlledRoutingTests": 25,
+  "actualPacketCacheIntegrationTests": 5,
+  "combinedModulesTest": {
+    "name": "The exact routing and frame-cache candidates work together on both real page078 panels without extra HD requests",
+    "HDRequests": 8,
+    "extraHDRequests": 0,
+    "localPreviewRequests": 2,
+    "smallProbeRequests": 2,
+    "routeState": {
+      "selected": "https://raw.githubusercontent.com/xhuozhong/just-cuz-episode-1/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/dist/collection/",
+      "settled": true,
+      "candidateCount": 3,
+      "disabledCount": 0,
+      "transferSamples": [
+        {
+          "base": "https://raw.githubusercontent.com/xhuozhong/just-cuz-episode-1/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/dist/collection/",
+          "samples": 3,
+          "bytesPerSecond": 3330550
+        },
+        {
+          "base": "https://just-cuz-episode-1-mirror.xhuozhong.workers.dev/",
+          "samples": 1,
+          "bytesPerSecond": 3349346
+        }
+      ]
+    },
+    "independentTargets": true,
+    "limits": {
+      "fetchActive": 0,
+      "fetchPeak": 4,
+      "decodeActive": 2,
+      "decodePeak": 4,
+      "live": 15,
+      "peakLive": 15,
+      "clockNow": 1000,
+      "activeTimers": 0
+    },
+    "passed": true
+  },
+  "policy": {
+    "sampleOnlyDemandedCurrentPagePackets": true,
+    "extraHdSpeedTestDownloads": 0,
+    "scoreOnlyAfterWholePacketHashValidation": true,
+    "preserveLocalSmallPreviews": true,
+    "preserveSharedPacketOrigin": true,
+    "originSwitchHysteresisRatio": 1.25
+  },
+  "originalMediaModified": false,
+  "actualBrowserAcceptance": false,
+  "geographicSpeedAdvantageEstablished": false,
+  "formalWholeBookQualityAccepted": false,
+  "scope": "Actual runtime code and real page078 packet bytes in controlled transport/canvas with real WebCrypto and Sharp; no browser latency claim."
+}

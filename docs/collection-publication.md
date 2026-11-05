@@ -84,3 +84,10 @@ Cross-origin restrictions and cached byte counts are disclosed. The panel makes
 no network telemetry uploads and ordinary readers do not download its script.
 Real public network measurements must be collected after deployment; local build
 success and packet checks are not a claim about internet latency.
+
+
+## Q47：使用当前页的已校验高清包选择线路
+
+构建时将历史帧缓存模块替换为 `tools/adaptive-frame-cache.js`，原始分发目录与素材清单保留。先用既有小探针建立初始线路，再由当前页实际需要的不同高清包各取一条线路样本；只有完整包 SHA 校验通过才统计交付速度，后续新包使用明显更快的线路。同一内容包固定来源以保持 HTTP 缓存复用，失败来源与过期请求不能写入新一轮测速。预览仍从页面原站加载，不额外下载高清素材测速，也不预取未来页。
+
+25 项线路受控检查与 5 项真实素材缓存集成检查通过，其中两个模块一起处理第 78 页两格的真实帧包，维持独立角度、4 路下载/解码、24 张位图上限。详见 `collection-loading-qa47.json`。这是功能验证，尚未证明真实浏览器或各地区下载速度改善；整书画面质量仍未完成验收。
