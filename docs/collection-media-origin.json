@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "status": "git-source-verified",
+  "repository": "xhuozhong/just-cuz-episode-1",
+  "commit": "1c853fc50a8ba99782dce6096abdbe48f84d4c9d",
+  "remoteTreeSha": "e241fe30a8fe6d89efe45fd956b1eee4ba19c7b3",
+  "sourcePrefix": "dist/collection/",
+  "mediaPathCount": 551,
+  "verifiedGitBlobCount": 551,
+  "mediaInventorySha256": "2d2d751fba17e72a86fab778036190eeb53eb712468ec74d4cb8c1529bec2a80",
+  "verifiedAtUTC": "2026-11-05T01:29:01.974509+00:00",
+  "scope": "All frame packs, preview packs and the delivery probe match the immutable Git tree; browser speed is not measured by this proof."
+}

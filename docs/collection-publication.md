@@ -42,10 +42,36 @@ GitHub Actions builds a separate `_site` artifact instead of publishing all of
 `dist`. It includes original images, preview packets, active video fallbacks,
 protection images, original-panel download links, fonts and music. The HD packets
 remain in Git but are excluded from the Pages artifact, keeping the published
-site around 674 MB. The build enables external HD and supplies only the immutable
-raw GitHub URL for the exact deployed `GITHUB_SHA`, then rebuilds the reader and
-updates its version. The draft Cloudflare packet upload is not a published route
-for this collection and is not configured in the artifact.
+site around 674 MB. The build enables external HD using two retained sources:
+a content-addressed Cloudflare static-asset mirror and a verified immutable
+GitHub media commit. Reader-only releases keep both media URL sets unchanged,
+so cached packets remain reusable. The webpage release commit is recorded
+separately from the media-source commit.
+
+The first HD request starts one shared comparison of the two 16 KiB probes.
+Only a complete probe with the expected SHA-256 can select a route. HD waits
+at most 1.2 seconds for that comparison; unresolved selection uses the existing
+GitHub route, and the probes expire after 6 seconds. Original images and small
+all-angle previews neither start nor wait for those probes. Connection or HTTP
+failures fall back to the other configured route; the reader's explicit retry
+allows previously failed routes to be measured again. Probe latency does not
+prove which route has the fastest sustained large-file throughput.
+
+`tools/verify_cdn_manifest.py` requires the exact current packet inventory and
+real remote header/body observations in `docs/collection-cdn-deployment.json`.
+`tools/verify_media_origin.py` binds all 551 logical frame/preview/probe paths
+to the separately verified Git source recorded in `docs/collection-media-origin.json`.
+A changed media file or path invalidates those proofs. The reviewed adaptive
+module is a build-only override, pinned by SHA-256 and included in the release
+receipt; historical source-media inventory remains exact.
+
+The mirror serves static files without executing a Worker. Cloudflare currently
+documents free unlimited static-asset requests and no additional storage cost,
+with 20,000 files per free Worker version and 25 MiB per individual file. The
+prepared mirror fits these limits. No R2 bucket or paid plan is required.
+Documentation checked 2026-11-05:
+https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/
+https://developers.cloudflare.com/workers/platform/limits/#static-assets
 
 This split respects GitHub Pages' documented 1 GB published-site limit without
 reencoding or discarding HD views. Documentation checked 2026-11-04:

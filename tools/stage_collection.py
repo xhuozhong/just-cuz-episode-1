@@ -2,7 +2,9 @@
 """Copy verified collection assets, then build a bounded GitHub Pages artifact.
 
 Existing episode-one dist files are never deleted or overwritten. Collection HD
-packs remain in Git source and are served from the immutable deployed commit.
+packs use a verified content-addressed static mirror, with the immutable Git
+media-source commit as a backup. Changed media requires refreshed mirror and
+source-commit proofs; reader-only releases keep both packet URL sets stable.
 """
 import argparse, hashlib, json, os, re, shutil, subprocess, sys
 from pathlib import Path, PurePosixPath
@@ -11,6 +13,7 @@ REPO = Path(__file__).resolve().parents[1]
 COLLECTION = REPO / 'dist/collection'
 INVENTORY = REPO / 'docs/collection-active-assets.json'
 DELIVERY_SHA = '7d94d2961d668ef0344f859a6671e8c8ed7f5310ba7d9981b6bd8ae0b47a5c79'
+ADAPTIVE_DELIVERY_SHA = '4f26e4aefa02471e3010197e27cce71166b06471c8ed967f72cff4da4e207bd3'
 OVERRIDE_FILES = {'asset-delivery.js','delivery-config.js','reader.js','index.html','perf-diagnostics.js'}
 
 def digest(data): return hashlib.sha256(data).hexdigest()
@@ -104,6 +107,15 @@ def build_site(args):
     assert re.fullmatch(r'[0-9a-f]{40}',args.commit), 'Use the immutable checkout commit SHA'
     subprocess.run([sys.executable,str(REPO/'tools/verify_collection.py')],check=True)
     inventory=json.loads(INVENTORY.read_text(encoding='utf-8'))
+    from verify_cdn_manifest import verify as verify_cdn
+    mirror=verify_cdn(REPO,inventory)
+    from verify_media_origin import verify as verify_media_origin
+    github_media=verify_media_origin(REPO,inventory)
+    # This build-only route selector is bundled in place of the historical
+    # delivery module. Its exact reviewed bytes are separate from unchanged
+    # source-media inventory and recorded in the publication receipt.
+    adaptive=(REPO/'tools/adaptive-asset-delivery.js').read_bytes()
+    assert digest(adaptive)==ADAPTIVE_DELIVERY_SHA,'Adaptive delivery differs from reviewed source'
     output=args.output.resolve()
     assert output.is_relative_to(REPO) and output!=REPO and not output.is_relative_to(REPO/'dist')
     assert not output.exists() or not any(output.iterdir()), 'Output must be a fresh empty directory'
@@ -115,10 +127,11 @@ def build_site(args):
         destination.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(origin,destination);total+=record['bytes'];count+=1
     config={
         'schemaVersion':1,'externalHd':True,
-        'mirrors':[f'https://raw.githubusercontent.com/xhuozhong/just-cuz-episode-1/{args.commit}/dist/collection/'],
+        'mirrors':[mirror,github_media],
         'probe':{'source':'delivery-probe.bin','byteLength':16384,'sha256':digest((target/'delivery-probe.bin').read_bytes())}
     }
-    (target/'delivery-config.js').write_text('window.COMIC_DELIVERY_CONFIG = Object.freeze('+json.dumps(config,separators=(',',':'))+');\n',encoding='utf-8')
+    (target/'delivery-config.js').write_text('window.COMIC_DELIVERY_CONFIG = Object.freeze('+json.dumps(config,separators=(',',':'))+');\n',encoding='utf-8',newline='\n')
+    (target/'asset-delivery.js').write_bytes(adaptive)
     subprocess.run([sys.executable,str(REPO/'tools/bundle_runtime.py'),'--dist',str(target)],check=True)
     index=(target/'index.html').read_text(encoding='utf-8')
     reader_sha=digest((target/'reader.js').read_bytes())
@@ -129,18 +142,22 @@ def build_site(args):
         shutil.copy2(perf_source,target/'perf-diagnostics.js')
         bootstrap=(REPO/'tools/perf-bootstrap.html').read_text(encoding='utf-8').replace('__PERF_SHA__',digest((target/'perf-diagnostics.js').read_bytes())[:12])
         index=index.replace('<head>','<head>\n'+bootstrap,1)
-    (target/'index.html').write_text(index,encoding='utf-8')
+    (target/'index.html').write_text(index,encoding='utf-8',newline='\n')
     for record in inventory['files']:
+        if record['source']=='asset-delivery.js':
+            assert digest(safe(target,record['source']).read_bytes())==ADAPTIVE_DELIVERY_SHA
+            continue
         if record['source'].startswith('frame-packs/') or record['source'] in {'delivery-config.js','reader.js','index.html'}:continue
         assert digest(safe(target,record['source']).read_bytes())==record['sha256'],'Artifact changed: '+record['source']
     subprocess.run([sys.executable,str(REPO/'tools/bundle_runtime.py'),'--dist',str(target),'--verify'],check=True)
     redirect='''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Just Cuz · 魔法故事书</title><script>location.replace('collection/'+location.search+location.hash);</script><body><p><a href="collection/">打开 Just Cuz 三集互动漫画</a></p></body></html>\n'''
-    (output/'index.html').write_text(redirect,encoding='utf-8');(output/'.nojekyll').touch()
+    (output/'index.html').write_text(redirect,encoding='utf-8',newline='\n');(output/'.nojekyll').touch()
     actual=sum(p.stat().st_size for p in output.rglob('*') if p.is_file())
     assert actual<1_000_000_000, 'Published site exceeds conservative decimal 1 GB budget'
     assert not (target/'frame-packs').exists()
     report={'commit':args.commit,'filesCopied':count,'siteBytes':actual,'externalHdPackCount':inventory['groups']['hd-frame-packs']['files'],'externalHdBytes':inventory['groups']['hd-frame-packs']['bytes'],'readerSha256':reader_sha,'diagnosticsOptIn':'id="comic-performance-opt-in"' in index,'publicPrefix':'collection/','siteDirectory':str(output.relative_to(REPO))}
-    (output/'collection-release.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+    report['assetDelivery']={'source':'tools/adaptive-asset-delivery.js','sha256':ADAPTIVE_DELIVERY_SHA,'selection':'verified-16KiB-probe','probeWaitLimitMs':1200,'mirrors':config['mirrors'],'originalSourceInventoryRetained':True,'stableMediaSource':True,'mediaOriginProofSha256':digest((REPO/'docs/collection-media-origin.json').read_bytes())}
+    (output/'collection-release.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8',newline='\n')
     print(json.dumps(report))
 
 if __name__=='__main__':
