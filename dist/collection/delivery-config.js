@@ -1,1 +1,1 @@
-window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"mirrors":[],"probe":{"source":"delivery-probe.bin","byteLength":16384,"sha256":"472d628b79a95e4545b4ee1a2e8812c5ebdd33ddeeabea8654b55396c8a029ac"}});
+window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":false,"mirrors":[],"probe":{"source":"delivery-probe.bin","byteLength":16384,"sha256":"472d628b79a95e4545b4ee1a2e8812c5ebdd33ddeeabea8654b55396c8a029ac"}});

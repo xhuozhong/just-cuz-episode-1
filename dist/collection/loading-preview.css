@@ -22,10 +22,122 @@
 #panel-layer > .panel-loading-percent[data-preview-usable="true"][data-compact="true"] { max-width:116px; padding:3px 4px; }
 #panel-layer > .panel-loading-percent[data-preview-usable="true"][data-compact="true"] .panel-loading-label { font-size:9px; }
 #panel-layer > .panel-loading-percent[data-preview-usable="true"][data-compact="true"] .panel-loading-number { font-size:13px; }
-#panel-layer > .panel-loading-percent[data-state="error"] {
+#panel-layer > .panel-loading-percent[data-state="error"][data-preview-usable="false"] {
   opacity:1;
   border:2px solid #b5755e;
   background:#fff1e8f5;
   box-shadow:0 3px 0 #b5755e35,0 6px 18px #85442f30;
 }
 #panel-layer > .panel-loading-percent[hidden] { display:none; }
+
+/* The initial notice stays explicit. Once the complete preview can rotate,
+   a compact paper tab leaves the original composition unobstructed. */
+#panel-layer > .panel-loading-percent {
+  left:var(--badge-center-x);
+  top:var(--badge-center-y);
+  width:var(--badge-width);
+}
+#panel-layer > .panel-loading-percent[data-state="loading"][data-preview-usable="true"] {
+  left:var(--badge-right);
+  top:var(--badge-bottom);
+  width:max-content;
+  max-width:min(var(--badge-width), 172px);
+  min-width:0;
+  transform:translate(-100%, -100%);
+  display:flex;
+  align-items:center;
+  gap:6px;
+  opacity:.78;
+  padding:4px 7px;
+  border:1px solid #937744;
+  border-radius:10px 6px 6px 10px;
+  background:#fff3d6f5;
+  box-shadow:0 1px 2px #4e351e42;
+}
+#panel-layer > .panel-loading-percent[data-state="loading"][data-preview-usable="true"] .panel-loading-label {
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:clamp(9px,1.15vw,12px);
+  line-height:1.2;
+}
+#panel-layer > .panel-loading-percent[data-state="loading"][data-preview-usable="true"] .panel-loading-number {
+  flex:none;
+  color:#634818;
+  font-size:clamp(11px,1.45vw,15px);
+}
+#panel-layer > .panel-loading-percent[data-state="loading"][data-preview-usable="true"] .panel-loading-hint,
+#panel-layer > .panel-loading-percent[data-state="loading"][data-preview-usable="true"][data-tiny="true"] .panel-loading-label {
+  display:none;
+}
+#panel-layer > .panel-loading-percent[data-state="loading"][data-preview-usable="true"][data-tiny="true"] {
+  padding:2px 4px;
+  gap:0;
+}
+#panel-layer > .panel-loading-percent[hidden] { display:none; }
+
+/* Keep the panel center available for reading at every loading stage on phones. */
+@media (max-width:650px) {
+  #panel-layer > .panel-loading-percent[data-mobile-state]:not([hidden]) {
+    left:var(--badge-right);
+    top:var(--badge-bottom);
+    width:max-content;
+    max-width:min(var(--badge-width), 172px);
+    min-width:0;
+    transform:translate(-100%, -100%);
+    display:flex;
+    align-items:center;
+    gap:4px;
+    opacity:1;
+    padding:3px 6px;
+    border:1px solid #987c46;
+    border-radius:8px 3px 3px 8px;
+    background:#fff3d9;
+    color:#49371f;
+    box-shadow:0 1px 3px #4e351e3c;
+  }
+  #panel-layer > .panel-loading-percent[data-mobile-state]:not([hidden]) .panel-loading-label {
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    font-size:10px;
+    line-height:1.2;
+    letter-spacing:0;
+  }
+  #panel-layer > .panel-loading-percent:not([hidden]) .panel-loading-number {
+    flex:none;
+    color:#624416;
+    font-size:11px;
+    line-height:1.1;
+  }
+  #panel-layer > .panel-loading-percent .panel-loading-hint,
+  #panel-layer > .panel-loading-percent[data-mobile-state="drag"] .panel-loading-number,
+  #panel-layer > .panel-loading-percent[data-state="error"] .panel-loading-number,
+  #panel-layer > .panel-loading-percent[data-mobile-state="progress"][data-tiny="true"]:not([data-state="error"]) .panel-loading-label {
+    display:none;
+  }
+  #panel-layer > .panel-loading-percent:not([hidden])[data-mobile-state="drag"] {
+    opacity:.88;
+    background:#fff6df;
+  }
+  #panel-layer > .panel-loading-percent:not([hidden])[data-mobile-state="drag"][data-tiny="true"] .panel-loading-label {
+    display:block;
+  }
+  #panel-layer > .panel-loading-percent:not([hidden])[data-mobile-state="drag"]::before {
+    content:"↔" / "";
+    flex:none;
+    font-size:12px;
+    line-height:1;
+  }
+  #panel-layer > .panel-loading-percent:not([hidden])[data-mobile-state="progress"][data-state="error"] {
+    color:#713d2e;
+    border-color:#b5755e;
+    background:#fff1e8;
+  }
+}
+
+#panel-layer > .panel-loading-percent[data-hd-on-demand="true"] .panel-loading-number {
+  display:none;
+}

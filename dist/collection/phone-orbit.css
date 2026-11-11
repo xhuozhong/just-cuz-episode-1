@@ -1,0 +1,11 @@
+#orbit-input[aria-pressed="true"] { background:#d9edf8; }
+#orbit-input[aria-busy="true"] { background:#fff4cb; }
+#orbit-input[hidden], #orbit-input-status[hidden] { display:none; }
+.reader-tools-card #orbit-input { grid-column:1 / -1; }
+.reader-topline:has(#orbit-input-status:not([hidden])) #page-caption { display:none; }
+#orbit-input-status {
+  min-width:0;
+  font-size:clamp(10px,2.5vw,12px);
+  color:#345e6e;
+  line-height:1.3;
+}
