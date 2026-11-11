@@ -23,8 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Verify collection assets and build bounded publication
-        run: python3 tools/stage_collection.py build --commit "$GITHUB_SHA"
+      - name: Verify exact reviewed artifact and published orbit assets
+        run: python3 tools/stage_verified_pages.py
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload static comic
