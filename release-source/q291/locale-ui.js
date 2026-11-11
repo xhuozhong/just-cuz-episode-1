@@ -1,0 +1,207 @@
+/* Reader controls only. Source artwork, story text and player state are never rewritten here. */
+(() => {
+  'use strict';
+  const languages = ['zh','en','ja','ko','ru','fr'];
+  const rows = {
+    documentTitle:['Just Cuz · 会转动的故事书（优化中）','Just Cuz · A Turning Storybook (in progress)','Just Cuz · 回せる絵本（制作中）','Just Cuz · 돌려 보는 이야기책 (개선 중)','Just Cuz · Книга с разных сторон (в работе)','Just Cuz · Le livre à faire tourner (en cours)'],
+    eyebrow:['翻开今天的小故事','Open a little story today','今日の小さな物語を開こう','오늘의 작은 이야기를 펼쳐요','Откройте маленькую историю','Ouvrez une petite histoire'],
+    bookTitle:['会转动的故事书','A Turning Storybook','回せる絵本','돌려 보는 이야기책','Книга с разных сторон','Le livre à faire tourner'],
+    intro:['从合集首页出发，和 Mandy、Cuz 一起读完三个小故事。','Start at the cover and read three little stories with Mandy and Cuz.','表紙から Mandy、Cuz と三つの物語を読もう。','표지부터 Mandy, Cuz와 세 가지 이야기를 읽어요.','Начните с обложки и прочтите три истории с Mandy и Cuz.','Depuis la couverture, lisez trois histoires avec Mandy et Cuz.'],
+    bookCount:['{total} 页 · 含合集首页','{total} pages · including the cover','全{total}ページ · 表紙を含む','총 {total}쪽 · 표지 포함','{total} стр. · с обложкой','{total} pages · couverture comprise'],
+    independentDrag:['独立拖动','Drag each panel','コマごとにドラッグ','각 칸을 드래그','Перетаскивайте каждый кадр','Faites glisser chaque case'],
+    doubleReset:['双击还原','Double-click to reset','ダブルクリックで戻す','두 번 클릭하여 복원','Двойной щелчок — сброс','Double-clic pour rétablir'],
+    prev:['← 上一页','← Previous','← 前へ','← 이전','← Назад','← Précédente'],
+    next:['下一页 →','Next →','次へ →','다음 →','Далее →','Suivante →'],
+    pagePrefix:['第','Page','ページ','쪽','Страница','Page'],
+    pageNumber:['页码','Page number','ページ番号','쪽 번호','Номер страницы','Numéro de page'],
+    pageOf:['/ {total} 页','/ {total}','/ {total}','/ {total}','/ {total}','/ {total}'],
+    go:['前往','Go','移動','이동','Перейти','Aller'],
+    language:['阅读语言','Reading language','読む言語','읽기 언어','Язык чтения','Langue de lecture'],
+    chapter:['选择章节','Choose a chapter','章を選ぶ','장 선택','Выберите главу','Choisir un chapitre'],
+    directory:['目录','Contents','目次','목차','Содержание','Sommaire'],
+    readingNav:['阅读导航','Reading navigation','読書ナビゲーション','읽기 탐색','Навигация по книге','Navigation de lecture'],
+    comicPage:['完整漫画页','Full comic page','漫画の全ページ','전체 만화 페이지','Полная страница комикса','Page entière de la BD'],
+    viewport:['漫画阅读区，可放大后滚动查看','Comic reader; zoom and scroll to explore','漫画の読書領域。拡大してスクロールできます','만화 읽기 영역. 확대 후 스크롤할 수 있어요','Область чтения: увеличивайте и прокручивайте','Zone de lecture : zoomez puis faites défiler'],
+    pageLabel:['第 {n} 页','Page {n}','{n}ページ','{n}쪽','Страница {n}','Page {n}'],
+    pageProgress:['第 {n} / {total} 页','Page {n} / {total}','{n} / {total}ページ','{n} / {total}쪽','Страница {n} / {total}','Page {n} / {total}'],
+    retryInteraction:['重新准备','Retry interaction','もう一度準備','다시 준비','Подготовить заново','Réessayer'],
+    openingPage:['正在打开原页…','Opening the original page…','原画ページを開いています…','원화 페이지를 여는 중…','Открываем оригинал страницы…','Ouverture de la page originale…'],
+    pageError:['这一页暂时没有打开，请重新尝试。','This page could not open. Please try again.','このページを開けませんでした。再試行してください。','이 페이지를 열 수 없어요. 다시 시도해 주세요.','Не удалось открыть страницу. Попробуйте снова.','Cette page ne peut pas s’ouvrir. Réessayez.'],
+    reopen:['重新打开','Open again','開き直す','다시 열기','Открыть снова','Rouvrir'],
+    zoom:['缩放控制','Zoom controls','ズーム操作','확대 및 축소','Масштаб','Commandes de zoom'],
+    zoomOut:['缩小','Zoom out','縮小','축소','Уменьшить','Réduire'],
+    zoomIn:['放大','Zoom in','拡大','확대','Увеличить','Agrandir'],
+    fit:['适合整页','Fit page','ページ全体','전체 페이지 맞춤','Вся страница','Page entière'],
+    focus:['沉浸阅读','Focus reading','集中して読む','집중 읽기','Режим чтения','Lecture immersive'],
+    exitFocus:['退出沉浸','Exit focus','集中表示を終了','집중 읽기 종료','Выйти из режима чтения','Quitter le mode immersif'],
+    viewOriginal:['查看原画','View original','原画を見る','원화 보기','Посмотреть оригинал','Voir l’original'],
+    panelSources:['分格原画','Original panels','コマの原画','칸별 원화','Оригиналы кадров','Cases originales'],
+    panelSourcesCount:['分格原画（{count}）','Original panels ({count})','コマの原画（{count}）','칸별 원화 ({count})','Оригиналы кадров ({count})','Cases originales ({count})'],
+    reset:['复位本页','Reset this page','このページを戻す','이 페이지 복원','Сбросить эту страницу','Rétablir cette page'],
+    help:['拖动一格，发现另一面 ✦ 松手缓缓停下 · 双击回到原画','Drag a panel to discover another side ✦ Release to ease to a stop · Double-click to reset','コマをドラッグして別の面へ ✦ 離すとゆっくり停止 · ダブルクリックで原画へ','한 칸을 드래그해 다른 면을 보세요 ✦ 놓으면 천천히 멈춰요 · 두 번 클릭하면 원화로','Перетащите кадр, чтобы увидеть другую сторону ✦ Отпустите для плавной остановки · Двойной щелчок — оригинал','Faites glisser une case pour voir un autre angle ✦ Relâchez pour ralentir · Double-clic pour revenir à l’original'],
+    previewNote:['互动体验草稿，画面仍在优化中。','Interactive preview, artwork still being refined.','インタラクティブ体験版。画面は引き続き調整中です。','인터랙티브 미리보기이며 그림은 계속 다듬고 있어요.','Интерактивный предпросмотр, изображения ещё дорабатываются.','Aperçu interactif, illustrations encore en cours d’amélioration.'],
+    footer:['JUST CUZ ✦ 会转动的故事书 · 优化中','JUST CUZ ✦ A Turning Storybook · In progress','JUST CUZ ✦ 回せる絵本 · 制作中','JUST CUZ ✦ 돌려 보는 이야기책 · 개선 중','JUST CUZ ✦ Книга с разных сторон · В работе','JUST CUZ ✦ Le livre à faire tourner · En cours'],
+    about:['阅读说明','Reading guide','読み方','읽기 안내','Как читать','Guide de lecture'],
+    returnNote:['下次打开，接着这一页读','Continue from this page next time','次回もこのページから','다음에도 이 페이지부터','В следующий раз продолжите с этой страницы','Reprenez à cette page la prochaine fois'],
+    directoryTitle:['三集故事 · {total} 页','Three stories · {total} pages','三つの物語 · {total}ページ','세 가지 이야기 · {total}쪽','Три истории · {total} стр.','Trois histoires · {total} pages'],
+    close:['关闭','Close','閉じる','닫기','Закрыть','Fermer'],
+    fullOriginal:['第 {n} 页完整原画','Page {n} · Complete original','{n}ページの原画全体','{n}쪽 전체 원화','Страница {n} · Полный оригинал','Page {n} · Original complet'],
+    originalAlt:['Just Cuz 第 {n} 页完整原画','Just Cuz · Page {n} original artwork','Just Cuz · {n}ページの原画','Just Cuz · {n}쪽 원화','Just Cuz · Оригинал страницы {n}','Just Cuz · Illustration originale de la page {n}'],
+    fullPage:['完整原页','Complete original page','原画ページ全体','전체 원화 페이지','Полная оригинальная страница','Page originale complète'],
+    saveOriginal:['保存完整原画','Save original page','原画全体を保存','전체 원화 저장','Сохранить оригинал страницы','Enregistrer la page originale'],
+    fullPanels:['完整分格原画','Complete original panels','コマの原画全体','전체 칸별 원화','Полные оригиналы кадров','Cases originales complètes'],
+    sourcesNote:['这里保留每一格的完整原画和原文字，可以和互动视角一起看。','Each panel keeps its complete original artwork and lettering, alongside the interactive views.','各コマの原画と原文を残しています。動かせる視点と見比べられます。','각 칸의 원화와 원문을 온전히 보존하여 인터랙티브 시점과 함께 볼 수 있어요.','Здесь сохранены полные оригиналы кадров и надписи для сравнения с интерактивными ракурсами.','Chaque case conserve son illustration et son texte d’origine, à comparer avec les vues interactives.'],
+    sourcesPage:['第 {n} 页 · {count} 格原画','Page {n} · {count} original panels','{n}ページ · 原画{count}コマ','{n}쪽 · 원화 {count}칸','Страница {n} · Оригинальных кадров: {count}','Page {n} · {count} cases originales'],
+    aboutTitle:['一起读故事','Read together','一緒に物語を読もう','함께 이야기를 읽어요','Читаем вместе','Lisons ensemble'],
+    aboutDrag:['左右拖动单格换视角，松手会缓缓停下。双击或按 Home 回到原画；放大后可在书页里移动阅读。','Drag a panel left or right to change views; release to ease to a stop. Double-click or press Home to reset. Zoom in to move around the page.','コマを左右にドラッグして視点を変更。離すとゆっくり止まります。ダブルクリックか Home で原画へ。拡大後はページ内を移動できます。','칸을 좌우로 드래그하면 시점이 바뀌고, 놓으면 천천히 멈춰요. 두 번 클릭하거나 Home을 누르면 원화로 돌아가요. 확대한 페이지 안에서 이동할 수 있어요.','Тяните кадр влево или вправо для смены ракурса. Отпустите для плавной остановки. Двойной щелчок или Home возвращает оригинал. Увеличенную страницу можно прокручивать.','Faites glisser une case à gauche ou à droite pour changer d’angle. Relâchez pour ralentir. Double-cliquez ou appuyez sur Home pour revenir à l’original. Zoomez pour parcourir la page.'],
+    aboutOriginal:['每一页静态和复位均保留完整原画。页面只准备当前页的互动，先打开轻量全角度预览，再补清晰画面。','The complete original stays visible when still or reset. Only the current page prepares interaction: lightweight all-angle previews first, then sharper images.','静止時とリセット時は原画全体を表示します。現在のページだけを準備し、全角度の軽量プレビューの後に高精細画像を読み込みます。','정지 및 복원 시 전체 원화를 보존해요. 현재 페이지의 인터랙션만 준비하며, 모든 각도의 가벼운 미리보기 뒤에 선명한 그림을 불러와요.','При остановке и сбросе сохраняется полный оригинал. Готовится только текущая страница: сначала лёгкий предпросмотр всех ракурсов, затем чёткие изображения.','L’original complet reste visible à l’arrêt et après réinitialisation. Seule la page actuelle prépare ses interactions : aperçu léger de tous les angles, puis images plus nettes.'],
+    aboutRefining:['本合集仍在优化中，部分环绕视角有人物和环境细节偏差。','This collection is still being refined. Some orbit views have character or environment detail differences.','この作品集は調整中です。一部の回転視点では人物や背景の細部に差があります。','이 모음집은 개선 중이며 일부 회전 시점에서 인물이나 배경의 세부 차이가 있어요.','Сборник ещё дорабатывается. На некоторых ракурсах детали персонажей и окружения могут отличаться.','Ce recueil est encore en cours d’amélioration. Certains angles présentent des différences dans les détails des personnages ou du décor.'],
+    musicGroup:['背景音乐控制','Background music controls','BGM操作','배경 음악 설정','Управление фоновой музыкой','Commandes de musique'],
+    musicVolume:['背景音乐音量','Background music volume','BGM音量','배경 음악 음량','Громкость фоновой музыки','Volume de la musique'],
+    musicOn:['♫ 音乐已开启','♫ Music on','♫ BGM オン','♫ 음악 켜짐','♫ Музыка включена','♫ Musique activée'],
+    musicClick:['♫ 点击开启音乐','♫ Click for music','♫ クリックでBGM','♫ 눌러서 음악 켜기','♫ Нажмите для музыки','♫ Cliquez pour la musique'],
+    musicStart:['♫ 开启音乐','♫ Start music','♫ BGMを再生','♫ 음악 켜기','♫ Включить музыку','♫ Activer la musique'],
+    musicPause:['暂停背景音乐','Pause background music','BGMを一時停止','배경 음악 일시 정지','Приостановить музыку','Mettre la musique en pause'],
+    musicEnable:['开启背景音乐','Start background music','BGMを再生','배경 음악 켜기','Включить фоновую музыку','Activer la musique de fond'],
+    musicError:['音乐暂时无法打开','Music is unavailable','BGMを再生できません','음악을 열 수 없어요','Музыка недоступна','Musique indisponible'],
+    musicLoop:['循环播放中','Playing on repeat','リピート再生中','반복 재생 중','Повторное воспроизведение','Lecture en boucle'],
+    musicGesture:['点一下页面即可播放','Tap the page to play','ページをタップして再生','페이지를 누르면 재생돼요','Нажмите на страницу для запуска','Touchez la page pour lancer'],
+    musicPaused:['音乐已暂停','Music paused','BGM一時停止中','음악 일시 정지됨','Музыка приостановлена','Musique en pause'],
+    musicPreparing:['正在准备音乐','Preparing music','BGMを準備中','음악 준비 중','Подготовка музыки','Préparation de la musique'],
+    chapterCover:['合集首页','Collection cover','作品集の表紙','모음집 표지','Обложка сборника','Couverture du recueil'],
+    chapterBirthday:['第一集 · 生日派对','Episode 1 · Birthday Party','第1話 · 誕生日パーティー','1화 · 생일 파티','Эпизод 1 · День рождения','Épisode 1 · Fête d’anniversaire'],
+    chapterTrip:['第二集 · 校外旅行','Episode 2 · Field Trip','第2話 · 校外学習','2화 · 현장 학습','Эпизод 2 · Школьная экскурсия','Épisode 2 · Sortie scolaire'],
+    chapterCamping:['第三集 · 露营之旅','Episode 3 · Camping Trip','第3話 · キャンプ','3화 · 캠핑 여행','Эпизод 3 · Поход с палатками','Épisode 3 · Camping'],
+    chapterRange:['{title} · {start}–{end} 页','{title} · pp. {start}–{end}','{title} · {start}–{end}ページ','{title} · {start}–{end}쪽','{title} · стр. {start}–{end}','{title} · p. {start}–{end}'],
+    openPage:['打开第 {n} 页','Open page {n}','{n}ページを開く','{n}쪽 열기','Открыть страницу {n}','Ouvrir la page {n}'],
+    readyReset:['可以拖动 · 双击还原原画','Drag to explore · Double-click to reset','ドラッグで回転 · ダブルクリックで原画へ','드래그하여 보기 · 두 번 클릭하여 복원','Тяните для обзора · Двойной щелчок — сброс','Faites glisser · Double-clic pour rétablir'],
+    readyWarming:['可以拖动 · 其他角度继续准备','Drag to explore · More angles are loading','ドラッグできます · 他の角度を準備中','드래그 가능 · 다른 각도 준비 중','Можно вращать · Другие ракурсы загружаются','Faites glisser · Autres angles en chargement'],
+    someReady:['{count} 个画面可以拖动，其余正在准备…','{count} panels can be dragged; preparing the rest…','{count}コマはドラッグ可能。他は準備中…','{count}칸은 드래그 가능, 나머지는 준비 중…','Можно вращать кадров: {count}; остальные готовятся…','{count} cases peuvent tourner ; préparation des autres…'],
+    someFailed:['{count} 个画面可以拖动，其他画面请重新准备','{count} panels can be dragged; retry the others','{count}コマはドラッグ可能。他は再試行してください','{count}칸은 드래그 가능, 나머지는 다시 준비해 주세요','Можно вращать кадров: {count}; повторите загрузку остальных','{count} cases peuvent tourner ; relancez les autres'],
+    interactionPreparing:['正在准备本页互动，原画可以先读','Preparing interaction; read the original meanwhile','操作を準備中。原画は読めます','인터랙션 준비 중, 먼저 원화를 읽을 수 있어요','Готовим взаимодействие; пока можно читать оригинал','Préparation des interactions ; l’original reste lisible'],
+    orbitPreparing:['正在准备环绕画面，原画可以先读','Preparing orbit views; read the original meanwhile','回転する画像を準備中。原画は読めます','회전 화면 준비 중, 먼저 원화를 읽을 수 있어요','Готовим ракурсы; пока можно читать оригинал','Préparation des angles ; l’original reste lisible'],
+    interactionUnavailable:['互动暂未打开，原画仍可阅读','Interaction is unavailable; the original is readable','操作を開けません。原画は読めます','인터랙션을 열 수 없지만 원화는 읽을 수 있어요','Взаимодействие недоступно; оригинал можно читать','Interactions indisponibles ; l’original reste lisible'],
+    interactionRetry:['互动暂未打开，原画仍可阅读。请重新准备。','Interaction is unavailable; the original is readable. Please retry.','操作を開けません。原画は読めます。再試行してください。','인터랙션을 열 수 없지만 원화는 읽을 수 있어요. 다시 준비해 주세요.','Взаимодействие недоступно; оригинал можно читать. Повторите подготовку.','Interactions indisponibles ; l’original reste lisible. Réessayez.'],
+    interruptedAngles:['部分环绕角度加载中断，原画和已打开的角度仍可查看。请重新准备。','Some angles stopped loading. The original and loaded angles remain visible. Please retry.','一部の角度の読み込みが中断しました。原画と読み込み済みの角度は見られます。再試行してください。','일부 각도 로딩이 중단되었어요. 원화와 열린 각도는 계속 볼 수 있어요. 다시 준비해 주세요.','Загрузка некоторых ракурсов прервана. Оригинал и загруженные ракурсы доступны. Повторите подготовку.','Le chargement de certains angles a été interrompu. L’original et les angles chargés restent visibles. Réessayez.'],
+    openingAngle:['正在打开这个角度…','Opening this angle…','この角度を開いています…','이 각도를 여는 중…','Открываем этот ракурс…','Ouverture de cet angle…'],
+    originalNotOpen:['原页尚未打开','Original page is not open','原画ページは未表示です','원화 페이지가 아직 열리지 않았어요','Оригинал страницы ещё не открыт','La page originale n’est pas encore ouverte'],
+    originalVisible:['原画完整呈现','Complete original artwork','原画全体を表示','전체 원화 표시','Полный оригинал','Illustration originale complète'],
+    sourceCrop:['原画裁切','Original artwork crop','原画の切り出し','원화 잘라 보기','Фрагмент оригинала','Extrait de l’original'],
+    sourceLoading:['正在打开原图裁切…','Opening the original crop…','原画の切り出しを開いています…','잘라낸 원화를 여는 중…','Открываем фрагмент оригинала…','Ouverture de l’extrait original…'],
+    sourceError:['这一格暂时没有打开，请重新尝试。','This panel could not open. Please try again.','このコマを開けませんでした。再試行してください。','이 칸을 열 수 없어요. 다시 시도해 주세요.','Не удалось открыть кадр. Попробуйте снова.','Cette case ne peut pas s’ouvrir. Réessayez.'],
+    sourceInteractive:['可以互动','Interactive','操作できます','인터랙션 가능','Интерактивный кадр','Interactif'],
+    keepOriginal:['保留完整原画','Complete original preserved','原画全体を保持','전체 원화 보존','Полный оригинал сохранён','Original complet conservé'],
+    savePanel:['保存分格原画','Save original panel','コマの原画を保存','칸별 원화 저장','Сохранить оригинал кадра','Enregistrer la case originale'],
+    sourcePanelLabel:['第{n}页 · 第{panel}格完整原画','Page {n} · Panel {panel} original','{n}ページ · {panel}コマ目の原画','{n}쪽 · {panel}칸 원화','Страница {n} · Оригинал кадра {panel}','Page {n} · Original de la case {panel}'],
+    panelDragLabel:['第 {n} 页，第 {panel} 格，左右拖动只转动这个小画面，双击或按 Home 还原原画','Page {n}, panel {panel}. Drag left or right to turn this view; double-click or press Home to reset.','{n}ページ、{panel}コマ目。左右にドラッグして回転。ダブルクリックか Home で原画へ。','{n}쪽, {panel}칸. 좌우로 드래그하여 이 화면을 돌려요. 두 번 클릭하거나 Home을 누르면 원화로 돌아가요.','Страница {n}, кадр {panel}. Тяните влево или вправо для вращения. Двойной щелчок или Home — оригинал.','Page {n}, case {panel}. Faites glisser à gauche ou à droite pour tourner cette vue. Double-clic ou Home pour rétablir.'],
+    text:['译文','Text','本文','본문','Текст','Texte'],
+    textTitle:['第 {n} 页 · 原文与译文','Page {n} · Story text','{n}ページ · 本文と原文','{n}쪽 · 본문과 원문','Страница {n} · Текст и оригинал','Page {n} · Texte et original'],
+    loadScene:['这个画面','This panel','このコマ','이 칸','Этот кадр','Cette case'],
+    loadError:['加载暂时中断','Loading interrupted','読み込みが中断しました','로딩 중단됨','Загрузка прервана','Chargement interrompu'],
+    loadPreview:['环绕预览加载中','Loading orbit preview','回転プレビューを読み込み中','회전 미리보기 로딩 중','Загрузка предпросмотра','Chargement de l’aperçu'],
+    loadHD:['高清画面加载中','Loading sharper images','高精細画像を読み込み中','고화질 그림 로딩 중','Загрузка чётких изображений','Chargement des images nettes'],
+    loadOrbit:['环绕画面加载中','Loading orbit views','回転する画像を読み込み中','회전 화면 로딩 중','Загрузка ракурсов','Chargement des angles'],
+    loadRetry:['请点击页面上方「重新准备」','Use “Retry interaction” above the page','ページ上部の「もう一度準備」を押してください','페이지 위의 「다시 준비」를 눌러 주세요','Нажмите «Подготовить заново» над страницей','Appuyez sur « Réessayer » au-dessus de la page'],
+    loadFirst:['先准备全角度小预览，再补充高清','Preparing all-angle previews, then sharper images','全角度の軽量プレビューの後に高精細画像を準備','모든 각도 미리보기 후 고화질 그림을 준비해요','Сначала предпросмотр всех ракурсов, затем чёткие изображения','Aperçu de tous les angles, puis images plus nettes'],
+    loadDrag:['可拖动试看','Drag to preview','ドラッグして試す','드래그하여 미리보기','Тяните для предпросмотра','Faites glisser pour essayer'],
+    loadTab:['加载中','Loading','準備中','로딩 중','Загрузка','Chargement'],
+    loadTry:['左右拖动看看','Drag left or right','左右にドラッグ','좌우로 드래그','Потяните влево или вправо','Glissez à gauche ou à droite'],
+    loadDragHD:['预览可拖动，高清加载中','Preview ready; sharper images are loading','プレビューはドラッグ可能。高精細画像を読み込み中','미리보기는 드래그 가능, 고화질 로딩 중','Предпросмотр можно вращать; чёткие изображения загружаются','Aperçu prêt ; images plus nettes en chargement'],
+    loadLast:['正在准备最后的画面，请稍候','Preparing the final images; please wait','最後の画像を準備しています。お待ちください','마지막 그림을 준비 중이에요. 잠시 기다려 주세요','Готовим последние изображения. Подождите','Préparation des dernières images, un instant'],
+    loadWait:['完成后拖动更流畅，请稍候','Please wait for smoother dragging','滑らかに動かすため、少々お待ちください','원활한 드래그를 위해 잠시 기다려 주세요','Подождите для плавного вращения','Patientez pour un défilement plus fluide'],
+    loadDescription:['{title}，{label} {percent}%，{hint}','{title}, {label}: {percent}%. {hint}','{title}、{label} {percent}%。{hint}','{title}, {label} {percent}%. {hint}','{title}, {label}: {percent}%. {hint}','{title}, {label} : {percent} %. {hint}']
+  };
+  const strings = Object.fromEntries(languages.map((language,index) => [language,Object.freeze(Object.fromEntries(Object.entries(rows).map(([key,values]) => [key,values[index]])))]));
+  window.COMIC_UI_STRINGS = Object.freeze(strings);
+  const $ = id => document.getElementById(id);
+  const selector = $('reading-language');
+  let language = languages.includes(selector && selector.value) ? selector.value : 'zh';
+  const t = (key, values = {}) => String(strings[language][key] || strings.en[key] || key).replace(/\{(\w+)\}/g, (_,name) => values[name] == null ? '' : String(values[name]));
+  const setText = (element,value) => { if (element && element.textContent !== value) element.textContent = value; };
+  const setAttr = (element,name,value) => { if (element && element.getAttribute(name) !== value) element.setAttribute(name,value); };
+  const chapterKeys = {'collection-cover':'chapterCover',birthday:'chapterBirthday','field-trip':'chapterTrip',camping:'chapterCamping'};
+  const sourceKeys = new Map(Object.entries(strings.zh).map(([key,value]) => [value,key]));
+  for (const [source,key] of Object.entries({'正在打开漫画…':'openingPage','拖动单格 · 双击还原视角':'readyReset','复位视角':'reset','♫ 背景音乐':'musicStart'})) sourceKeys.set(source,key);
+  const memory = new WeakMap();
+  function translatedSource(source) {
+    const direct = sourceKeys.get(source);
+    if (direct) return t(direct);
+    let match;
+    if ((match = source.match(/^(\d+) 个画面可以拖动，其余正在准备…$/))) return t('someReady',{count:match[1]});
+    if ((match = source.match(/^(\d+) 个画面可以拖动，其他画面请重新准备$/))) return t('someFailed',{count:match[1]});
+    if ((match = source.match(/^分格原画（(\d+)）$/))) return t('panelSourcesCount',{count:match[1]});
+    if ((match = source.match(/^第\s*(\d+)\s*页\s*·\s*第\s*(\d+)\s*格完整原画$/))) return t('sourcePanelLabel',{n:match[1],panel:match[2]});
+    return source;
+  }
+  function dynamic(element, attribute) {
+    if (!element) return;
+    const value = attribute ? element.getAttribute(attribute) : element.textContent;
+    if (!value) return;
+    let fields = memory.get(element); if (!fields) { fields = {}; memory.set(element,fields); }
+    const field = attribute || 'text', old = fields[field];
+    const raw = old && value === old.output ? old.raw : value;
+    const output = translatedSource(raw);
+    fields[field] = {raw,output};
+    if (attribute) setAttr(element,attribute,output); else setText(element,output);
+  }
+  function render() {
+    if (!selector) return;
+    const n = Math.max(1,Number($('page-number') && $('page-number').value) || 1);
+    const total = window.COMIC_BOOK && window.COMIC_BOOK.pages && window.COMIC_BOOK.pages.length || Number($('page-number') && $('page-number').max) || 85;
+    const vars = {n,total};
+    if (document.title !== t('documentTitle')) document.title = t('documentTitle');
+    const texts = {'prev-page':'prev','next-page':'next','open-directory':'directory','retry-interaction':'retryInteraction','page-loading':'openingPage','retry-page':'reopen','fit-page':'fit','original-button':'viewOriginal','reset-panels':'reset','book-about':'about','close-directory':'close','close-original':'close','original-download':'saveOriginal','panel-sources-title':'fullPanels','panel-sources-note':'sourcesNote','close-panel-sources':'close','book-about-title':'aboutTitle','close-book-about':'close','close-bilingual':'close','dynamic-note':'previewNote'};
+    for (const [id,key] of Object.entries(texts)) setText($(id),t(key));
+    for (const [query,key] of Object.entries({'.book-title .eyebrow':'eyebrow','.book-title h1':'bookTitle','.intro':'intro','#source-panel-count':'independentDrag','#dynamic-count':'doubleReset','#page-jump label':'pagePrefix','#page-jump .jump-button':'go','.help':'help','.footer-signature':'footer','.return-note':'returnNote','#page-error p':'pageError'})) setText(document.querySelector(query),t(key));
+    setText($('book-count'),t('bookCount',vars)); setText(document.querySelector('#page-jump > span'),t('pageOf',vars));
+    setText($('current-page-label'),t('pageLabel',vars)); setText($('page-progress'),t('pageProgress',vars));
+    setText($('directory-title'),t('directoryTitle',vars));
+    setText($('focus-reading'),t(document.body.classList.contains('reading-focus') ? 'exitFocus' : 'focus'));
+    const labels = {'reading-language':'language','page-number':'pageNumber','chapter-select':'chapter','zoom-out':'zoomOut','zoom-in':'zoomIn','page-viewport':'viewport'};
+    for (const [id,key] of Object.entries(labels)) setAttr($(id),'aria-label',t(key));
+    for (const [query,key] of Object.entries({'.music-controls':'musicGroup','#music-volume':'musicVolume','.reader-toolbar':'readingNav','section.reader':'comicPage','.zoom-controls':'zoom','label[for="chapter-select"]':'chapter','.language-switch .sr-only':'language'})) {
+      const element = document.querySelector(query); if (element && (element.tagName === 'LABEL' || query.includes('.sr-only'))) setText(element,t(key)); else setAttr(element,'aria-label',t(key));
+    }
+    for (const id of ['prev-page','next-page','close-directory','close-original','close-panel-sources','close-bilingual']) setAttr($(id),'aria-label',$(id) ? $(id).textContent : '');
+    const chapters = window.COMIC_BOOK && window.COMIC_BOOK.chapters || [];
+    for (const [index,chapter] of chapters.entries()) {
+      const title = chapterKeys[chapter.id] ? t(chapterKeys[chapter.id]) : chapter.title;
+      const option = document.querySelector(`#chapter-select option[value="${Number(chapter.start)}"]`);
+      setText(option,t('chapterRange',{title,start:chapter.start,end:chapter.end}));
+      setText(document.querySelectorAll('#directory-content section > h3')[index],title);
+    }
+    document.querySelectorAll('.page-thumb[data-page]').forEach(element => setAttr(element,'aria-label',t('openPage',{n:element.dataset.page})));
+    document.querySelectorAll('#book-about-dialog .directory-content > p').forEach((element,index) => { const key = ['aboutDrag','aboutOriginal','aboutRefining'][index]; if (key) setText(element,t(key)); });
+    setAttr($('page-image'),'alt',t('originalAlt',vars));
+    setText($('original-title'),t('fullOriginal',vars)); setAttr($('original-image'),'alt',t('originalAlt',vars));
+    const page = window.COMIC_BOOK && window.COMIC_BOOK.pages && window.COMIC_BOOK.pages[n-1];
+    if (page && $('original-size') && $('original-size').textContent) setText($('original-size'),`${page.width} × ${page.height} · ${t('fullPage')}`);
+    dynamic($('panel-sources-button'));
+    const cards = document.querySelectorAll('#panel-sources-gallery .panel-source-card');
+    if ($('panel-sources-page') && $('panel-sources-page').textContent) setText($('panel-sources-page'),t('sourcesPage',{n,count:cards.length}));
+    for (const id of ['page-caption','zoom-level','music-toggle','music-status']) dynamic($(id));
+    dynamic($('music-toggle'),'aria-label');
+    document.querySelectorAll('#panel-sources-gallery .panel-source-caption strong,#panel-sources-gallery .panel-source-caption > span,#panel-sources-gallery .panel-source-loading,#panel-sources-gallery button,#panel-sources-gallery .panel-source-footer > span,#panel-sources-gallery .panel-source-footer > a').forEach(element => dynamic(element));
+    cards.forEach(card => { const crop = card.querySelector('img'), title = card.querySelector('.panel-source-caption strong'); if (crop) setAttr(crop,'alt',`Just Cuz · ${title ? title.textContent : t('loadScene')} · ${t('sourceCrop')}`); });
+    document.querySelectorAll('#panel-layer > .panel-host').forEach(host => {
+      if (host.dataset.backgroundOnly === 'true') return;
+      const match = (host.dataset.sourcePanelId || '').match(/^page-(\d+)-panel-(\d+)$/);
+      if (match) setAttr(host,'aria-label',t('panelDragLabel',{n:Number(match[1]),panel:Number(match[2])}));
+    });
+    // This localizer does not set data-state, hidden, disabled, media or player readiness.
+  }
+  let queued = false;
+  function queue() { if (queued) return; queued = true; Promise.resolve().then(() => {queued = false; render();}); }
+  document.addEventListener('comic-language-change',event => { if (languages.includes(event.detail && event.detail.language)) language = event.detail.language; queue(); });
+  document.addEventListener('comic-page-original-ready',queue);
+  document.addEventListener('comic-panel-status',queue);
+  const observer = new MutationObserver(queue);
+  for (const id of ['page-caption','music-toggle','music-status','zoom-level','page-number','current-page-label','page-progress','panel-sources-button','panel-sources-page','panel-sources-gallery','original-title','original-size','dynamic-note']) {
+    const element = $(id); if (element) observer.observe(element,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:id === 'music-toggle' ? ['aria-label','aria-pressed'] : ['value']});
+  }
+  if (document.body) observer.observe(document.body,{attributes:true,attributeFilter:['class']});
+  if ($('panel-layer')) observer.observe($('panel-layer'),{childList:true});
+  document.addEventListener('click',queue);
+  window.ComicLocaleUI = Object.freeze({t,refresh:queue,get language(){return language;}});
+  render();
+})();
