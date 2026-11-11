@@ -3,3 +3,8 @@ dist/collection/** -text
 docs/collection-source-index.html -text
 docs/collection-lossless-protection-q34.json -text
 docs/collection-loading-q38.json -text
+
+# Preserve every checked publication/source byte on Windows and CI.
+dist/** -text
+release-source/q291/** -text
+docs/pages-release-manifest.json -text
