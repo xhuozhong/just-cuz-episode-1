@@ -239,7 +239,7 @@
     })();
   </script>
   <link rel="stylesheet" href="reader-styles-7bb8a4d8661e.css">
-  <script defer src="reader.js?v=q293-reader-6176fb45bec7"></script>
+  <script defer src="reader.js?v=q295-7e495789e6ed"></script>
   <script defer src="phone-orbit.js?v=8786f52f42c1"></script>
   <script id="page-model-loader">
 (() => {
@@ -270,6 +270,18 @@
   const identity = ['id','page','source','sourcePage','sha256','width','height','episode','role','bytes'];
   const aborted = () => new DOMException('Page changed', 'AbortError');
 
+  async function inspect(page, bytes) {
+    const route = window.ComicModelPacket?.(page.page);
+    if (!route || !bytes.byteLength || bytes.byteLength > 256 * 1024) throw new Error('Invalid page model size');
+    if (await hash(bytes) !== route.sha256) throw new Error('Page model checksum mismatch');
+    const record = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+    if (record.schemaVersion !== 1 || !record.page || identity.some(key => page[key] !== record.page[key])
+      || !Array.isArray(record.page.panels) || !Array.isArray(record.page.panelSources)) throw new Error('Page model does not match its original');
+    const model = record.page, verified = await verifiedPin(page, record);
+    if (verified) pins.set(model, verified);
+    if (record.protectionResources) protectionResources.set(model, freeze(record.protectionResources));
+    return model;
+  }
   function ensure(page, signal) {
     if (!page || signal?.aborted) return Promise.reject(aborted());
     if (ready.has(page)) return Promise.resolve(page);
@@ -279,9 +291,12 @@
     if (!route || !window.crypto?.subtle) return Promise.reject(new Error('Verified page model loading unavailable'));
     const job = {signal};
     job.promise = (async () => {
-      const response = await fetch(route.url, {signal, cache:retry.has(page) ? 'reload' : 'force-cache'});
-      if (!response.ok) throw new Error('Page model HTTP error');
-      const bytes = await response.arrayBuffer();
+      let bytes = window.ComicNextPageWarmup?.packet(page, route.url.split('?')[0], route.sha256);
+      if (!bytes) {
+        const response = await fetch(route.url, {signal, cache:retry.has(page) ? 'reload' : 'force-cache'});
+        if (!response.ok) throw new Error('Page model HTTP error');
+        bytes = await response.arrayBuffer();
+      }
       if (!bytes.byteLength || bytes.byteLength > 256 * 1024) throw new Error('Invalid page model size');
       const checksum = await hash(bytes);
       if (signal?.aborted || active.get(page) !== job) throw aborted();
@@ -306,7 +321,7 @@
     active.set(page,job);
     return job.promise;
   }
-  window.ComicPageModels = Object.freeze({ensure,pin,protection:page=>protectionResources.get(page)});
+  window.ComicPageModels = Object.freeze({ensure,inspect,isReady:page=>ready.has(page),pin,protection:page=>protectionResources.get(page)});
 })();
   </script>
   <style id="reader-recovery-layout">
@@ -315,6 +330,34 @@
     #page-caption { flex:1 1 10rem; min-width:0; overflow-wrap:anywhere; }
     #retry-interaction { min-height:36px; white-space:nowrap; }
     @media(max-width:600px) { #retry-interaction { min-height:44px; } }
+  </style>
+  <style id="reader-tools-dialogs">
+    .directory-stories { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:12px 12px 0; }
+    .directory-story { display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:4px; min-width:0; min-height:112px; padding:7px 4px; color:inherit; font:inherit; border:1px solid var(--binding-ink,#534637); border-radius:9px 11px 8px 10px; background:var(--binding-paper,#fffdf4); }
+    .directory-story[aria-current="location"] { background:#fff1ac; box-shadow:0 0 0 1px var(--binding-ink,#534637); }
+    .directory-story img { display:block; width:40px; height:50px; object-fit:contain; border:1px solid #b5a98c; background:#fff; border-radius:2px; }
+    .directory-story-title { font-size:12px; line-height:1.2; font-weight:700; overflow-wrap:anywhere; }
+    .directory-story-range { font-size:11px; line-height:1.2; }
+    .reader-tools-card { max-height:min(65svh,460px); overflow:auto; }
+    #share-page,#report-page { min-height:44px; min-width:0; white-space:normal; overflow-wrap:anywhere; }
+    #reader-tool-status { position:absolute; z-index:20; bottom:calc(100% + 8px); inset-inline-end:0; width:max-content; max-width:min(280px,calc(100vw - 24px)); padding:8px 12px; border:1px solid var(--binding-ink,#534637); border-radius:9px; background:var(--binding-paper,#fffdf4); font-size:13px; box-shadow:0 3px 9px #30252030; }
+    #reader-tool-status[hidden] { display:none; }
+    dialog.reader-tool-dialog { box-sizing:border-box; width:min(460px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(82svh,660px); overflow:auto; border:2px solid var(--binding-ink,#534637); border-radius:13px 11px 15px 10px; background:var(--story-grain) left top / 160px 160px repeat,var(--binding-paper,#fffdf4); }
+    .reader-tool-dialog .dialog-header { gap:8px; padding:10px 12px; }
+    .reader-tool-dialog .dialog-header h2 { min-width:0; margin:0; font-size:18px; overflow-wrap:anywhere; }
+    .reader-tool-dialog button { min-height:44px; min-width:44px; font:inherit; white-space:normal; overflow-wrap:anywhere; }
+    .reader-tool-fields { padding:10px 12px 12px; font-size:14px; line-height:1.4; }
+    .reader-tool-fields p { margin:0 0 9px; }
+    .reader-tool-fields label { display:block; margin:10px 0 5px; font-weight:700; }
+    .reader-tool-fields textarea,.reader-tool-fields select { display:block; box-sizing:border-box; width:100%; min-width:0; max-width:100%; min-height:44px; padding:8px; border:1px solid #a89b80; border-radius:7px; color:inherit; background:#fffdf7; font:inherit; font-size:14px; overflow-wrap:anywhere; }
+    .reader-tool-fields textarea { resize:vertical; }
+    .reader-tool-fields textarea[readonly] { background:#f6f2e5; }
+    .reader-tool-dialog-actions { display:flex; justify-content:flex-end; margin:10px 0; }
+    #report-copy-status,#share-copy-status { margin:5px 0 0; font-size:13px; overflow-wrap:anywhere; }
+    @media(max-width:350px) { .directory-stories { gap:5px; padding-inline:10px; } .directory-story-title { font-size:11px; } }
+  </style>
+  <style id="reader-touch-gestures">
+    #page-viewport, #page-viewport .panel-host { touch-action:none; }
   </style>
 </head>
 <body>
@@ -387,9 +430,12 @@
               <button id="orbit-input" type="button" aria-pressed="false" hidden>手机转动</button>
               <button id="focus-reading" type="button" aria-pressed="false">沉浸阅读</button>
               <button id="bilingual-read" type="button" aria-haspopup="dialog" aria-controls="bilingual-dialog">译文</button>
+              <button id="share-page" type="button">分享这一页</button>
+              <button id="report-page" type="button" aria-haspopup="dialog" aria-controls="report-dialog">记录本页问题</button>
               <button id="panel-sources-button" type="button" aria-haspopup="dialog" aria-controls="panel-sources-dialog" hidden>分格原画</button>
             </div>
           </details>
+          <output id="reader-tool-status" role="status" aria-live="polite" hidden></output>
         </div>
         <div id="panel-control-list" class="panel-control-list" hidden inert aria-hidden="true"></div>
         <p id="page-progress" class="reading-note" aria-live="polite">第 1 / 85 页</p>
@@ -403,6 +449,7 @@
 
   <dialog id="directory-dialog" class="directory-dialog" aria-labelledby="directory-title">
     <div class="dialog-header"><h2 id="directory-title">三集故事 · 85 页</h2><button id="close-directory" type="button" aria-label="关闭目录">关闭</button></div>
+    <div id="directory-story-cards" class="directory-stories" aria-label="三个小故事"></div>
     <div id="directory-content" class="directory-content"></div>
   </dialog>
   <dialog id="original-dialog" class="original-dialog" aria-labelledby="original-title">
@@ -419,6 +466,29 @@
   <dialog id="bilingual-dialog" class="bilingual-dialog" aria-labelledby="bilingual-text-title">
     <div class="dialog-header"><h2 id="bilingual-text-title">本页双语文字</h2><button id="close-bilingual" type="button" aria-label="关闭双语文字">关闭</button></div>
     <div id="bilingual-text-content"></div>
+  </dialog>
+  <dialog id="share-dialog" class="reader-tool-dialog" aria-labelledby="share-title">
+    <div class="dialog-header"><h2 id="share-title">分享这一页</h2><button id="close-share" type="button">关闭</button></div>
+    <div class="reader-tool-fields">
+      <p id="share-instruction">链接会保留当前页码和阅读语言。</p>
+      <textarea id="share-link" readonly rows="3" aria-labelledby="share-title" spellcheck="false"></textarea>
+      <div class="reader-tool-dialog-actions"><button id="copy-share-link" type="button">复制链接</button></div>
+      <p id="share-copy-status" role="status" aria-live="polite"></p>
+    </div>
+  </dialog>
+  <dialog id="report-dialog" class="reader-tool-dialog" aria-labelledby="report-title" aria-describedby="report-note">
+    <div class="dialog-header"><h2 id="report-title">记录本页问题</h2><button id="close-report" type="button">关闭</button></div>
+    <div class="reader-tool-fields">
+      <p id="report-note">这份记录留在你的浏览器里。复制后，可自行发送给制作方。</p>
+      <label id="report-category-label" for="report-category">问题类型</label>
+      <select id="report-category"><option value="loading">加载速度</option><option value="rotation">转动与操作</option><option value="text">文字与翻译</option><option value="other">其他</option></select>
+      <label id="report-description-label" for="report-description">补充说明（选填）</label>
+      <textarea id="report-description" rows="2" maxlength="600"></textarea>
+      <label id="report-preview-label" for="report-preview">问题记录预览</label>
+      <textarea id="report-preview" readonly rows="7" spellcheck="false"></textarea>
+      <div class="reader-tool-dialog-actions"><button id="copy-report" type="button">复制问题记录</button></div>
+      <p id="report-copy-status" role="status" aria-live="polite"></p>
+    </div>
   </dialog>
   <noscript>请允许浏览器运行脚本以使用分页导航。85 张完整原图也保存在 pages 文件夹中。</noscript>
 <script id="first-original-paint">

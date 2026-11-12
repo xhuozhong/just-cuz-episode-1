@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "reviewedParent": "f01dfdb2ed80bac40dd02c8fa2a724598074a382",
-  "candidate": "Q294-reader-iteration",
+  "reviewedParent": "ec08d1338f71e11066b8f9840ff2397d727d1feb",
+  "candidate": "Q295-reading-and-sharing",
   "maxSiteBytes": 1000000000,
   "files": {
     ".nojekyll": {
@@ -9,8 +9,8 @@
       "bytes": 0
     },
     "collection-release.json": {
-      "bytes": 4758,
-      "sha256": "3aa8854f490ef46ae489d5d86f2c6e65ab5198125285762a2830b997ed46f65b"
+      "bytes": 4822,
+      "sha256": "218eaa0336f3fdb22de02a384eed4f2d120542b3ef53f58d5b36cf5ce8ebc61b"
     },
     "collection/ORBIT_VIEWER_LICENSE.txt": {
       "sha256": "077709d959a8a62249523349767edd072cfe6e6ba1b1854beeb95f83a95aec06",
@@ -1829,8 +1829,8 @@
       "bytes": 1036182
     },
     "collection/index.html": {
-      "bytes": 49227,
-      "sha256": "4e0ddd033aecce72590bc86a3dc00fef76c4930646dd28a8dd04a0172b243907"
+      "bytes": 55816,
+      "sha256": "68188d360f7707b72fe11f6aac0eea2cc813a3ccdc83a6f428bb7cb0a39a7a98"
     },
     "collection/loading-preview.css": {
       "bytes": 5394,
@@ -3561,8 +3561,8 @@
       "bytes": 125037
     },
     "collection/reader.js": {
-      "bytes": 479823,
-      "sha256": "6176fb45bec753d5a9b30200a0fa496940b8f9ab6f5230d21e2eecd502980ed2"
+      "bytes": 509344,
+      "sha256": "7e495789e6ed00de154b89bceb186147aa306f994a82fe77ffe756f37bdf94e6"
     },
     "collection/responsive-chrome.css": {
       "bytes": 13362,
@@ -6431,6 +6431,18 @@
     "collection/book-models/page-043-2472d12adbb4.json": {
       "bytes": 15065,
       "sha256": "2472d12adbb48cf9db2670229dc1593b61b9b1d5aaccf71f43c4ad1b3447f510"
+    },
+    "collection/ui-assets/directory/page-002-5ea06412b259.webp": {
+      "bytes": 17644,
+      "sha256": "5ea06412b2591b6a08088e631989518c51a8218f79d324cd339b01209ff7d609"
+    },
+    "collection/ui-assets/directory/page-036-7940008d7245.webp": {
+      "bytes": 15416,
+      "sha256": "7940008d724560cebdde88cbbc2a025f22ddf2defc72d07ea57c8cfd20afa924"
+    },
+    "collection/ui-assets/directory/page-060-c01a4d9ddf0e.webp": {
+      "bytes": 18032,
+      "sha256": "c01a4d9ddf0e60e9d6eb621ea6b57fce7efb2553191771500b561da4ebd1c710"
     }
   },
   "assetBase": "https://xhuozhong.github.io/just-cuz-orbit-assets/",

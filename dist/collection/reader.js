@@ -356,8 +356,8 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
   const relative = value => typeof value === 'string' && value.length > 0
     && !/^(?:[a-z]+:|[\/])|[?#%\\]/i.test(value)
     && value.split('/').every(part => part && part !== '.' && part !== '..');
-  function boundSequence(panel, page) {
-    const config = window.COMIC_FRAME_SEQUENCES, media = panel && panel.actualMedia;
+  function boundSequence(panel, page, config = window.COMIC_FRAME_SEQUENCES) {
+    const media = panel && panel.actualMedia;
     if (!config || config.schemaVersion !== 1 || !Array.isArray(config.entries) || !media
       || !page || !sha(page.sha256) || !sha(media.sha256) || !relative(panel.video)) return null;
     const matches = config.entries.filter(entry => entry && entry.panelId === panel.id);
@@ -409,9 +409,9 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
     return Object.freeze({...entry, ...(crop ? {transparentFrameCrop:crop} : {}), boundedOrbit,
       frames:Object.freeze(entry.frames.slice()), packs});
   }
-  function boundPreview(panel, page, sequence) {
+  function boundPreview(panel, page, sequence, config = window.COMIC_FRAME_SEQUENCES) {
     const legacy = window.COMIC_PREVIEW_SEQUENCES;
-    const entries = window.COMIC_FRAME_SEQUENCES?.previewEntries ?? (legacy?.schemaVersion === 1 ? legacy.entries : null);
+    const entries = config?.previewEntries ?? (legacy?.schemaVersion === 1 ? legacy.entries : null);
     if (!sequence.packs || !Array.isArray(entries)) return null;
     const matches = entries.filter(entry => entry && entry.panelId === panel.id);
     if (matches.length !== 1) return null;
@@ -735,6 +735,8 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
         // The validated content hash gives revised packets a distinct HTTP
         // cache key. Both whole-pack and per-frame checks still verify bytes.
         if (request.pack) init.cache = 'force-cache';
+        const warmed = request.preview && request.pack && window.ComicNextPageWarmup?.preview(request.pack.source, request.pack.sha256);
+        if (warmed) return warmed;
         if (request.pack && window.ComicAssetDelivery && typeof window.ComicAssetDelivery.fetch === 'function') return window.ComicAssetDelivery.fetch(request.pack.source, request.pack.sha256, init);
         const source = request.pack ? `${request.pack.source}?sha256=${request.pack.sha256}` : store.sequence.frames[request.index];
         return fetch(source, init);
@@ -990,6 +992,44 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
       });
     }
   }
+  // Only one small, short-lived visual snapshot may exist across the reader.
+  let qualityTransition = null;
+  function stopQualityTransition(owner) {
+    const current = qualityTransition;
+    if (!current || owner && current.owner !== owner) return;
+    qualityTransition = null;
+    clearTimeout(current.timer);
+    current.animation.onfinish = null; current.animation.oncancel = null;
+    current.animation.cancel();
+    current.canvas.remove(); current.canvas.width = 0; current.canvas.height = 0;
+  }
+  function beginQualityTransition(consumer, preview) {
+    const canvas = consumer.canvas;
+    if (preview || !consumer.actualPreview || consumer.actualTarget !== consumer.target ||
+        consumer.verifiedSparseRGBA || consumer.store.sequence.transparentFrameCrop ||
+        !canvas.isConnected || canvas.hidden || document.hidden || typeof canvas.animate !== 'function' ||
+        window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!(rect.width > 0 && rect.height > 0)) return;
+    stopQualityTransition();
+    const ghost = document.createElement('canvas');
+    const scale = Math.min(1, 720 / Math.max(canvas.width, canvas.height));
+    ghost.width = Math.max(1, Math.round(canvas.width * scale));
+    ghost.height = Math.max(1, Math.round(canvas.height * scale));
+    const context = ghost.getContext('2d');
+    if (!context) return;
+    try { context.drawImage(canvas, 0, 0, ghost.width, ghost.height); } catch (_) { return; }
+    ghost.className = canvas.className + ' panel-quality-transition';
+    ghost.style.cssText = canvas.style.cssText;
+    ghost.style.pointerEvents = 'none'; ghost.style.opacity = '1';
+    ghost.setAttribute('aria-hidden','true');
+    canvas.after(ghost);
+    const animation = ghost.animate([{opacity:1},{opacity:0}], {duration:100,easing:'ease-out'});
+    const record = {owner:consumer,canvas:ghost,animation,timer:null}; qualityTransition = record;
+    const finish = () => { if (qualityTransition === record) stopQualityTransition(consumer); };
+    animation.onfinish = finish; animation.oncancel = finish;
+    record.timer = setTimeout(finish, 180);
+  }
   function scheduleRender(consumer) {
     if (consumer.disposed || consumer.renderScheduled) return;
     consumer.renderScheduled = true;
@@ -1006,6 +1046,7 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
         schedulePump(); return;
       }
       try {
+        try { beginQualityTransition(consumer, preview); } catch (_) { stopQualityTransition(consumer); }
         if (consumer.verifiedSparseRGBA) consumer.context.clearRect(0,0,consumer.canvas.width,consumer.canvas.height);
         const crop=!preview && consumer.store.sequence.transparentFrameCrop;
         if (crop) consumer.context.drawImage(bitmap,crop.x,crop.y,crop.width,crop.height);
@@ -1019,7 +1060,7 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
         if (typeof consumer.options.onError === 'function') consumer.options.onError(error);
         return;
       }
-      consumer.actualIndex = index; consumer.actualPreview = preview;
+      consumer.actualIndex = index; consumer.actualPreview = preview; consumer.actualTarget = consumer.target;
       if (consumer.manualTarget === consumer.target) scheduleSettledRange(consumer);
       const sequence = consumer.store.sequence, firstReady = !consumer.ready;
       consumer.ready = true;
@@ -1124,6 +1165,7 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
       if (consumer.disposed || !Number.isFinite(Number(percent))) return;
       const next = Math.min(sequence.frameCount - 1, Math.floor(Math.max(0, Math.min(100, Number(percent))) / 100 * sequence.frameCount + 1e-9));
       if (next !== consumer.target) {
+        stopQualityTransition(consumer);
         clearManualSettle(consumer);
         store.seekQuiet = false;
         clearTimeout(store.seekTimer);
@@ -1143,11 +1185,13 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
     }
     function reset() {
       if (consumer.disposed) return;
+      stopQualityTransition(consumer);
       consumer.version++; consumer.direction = 0; consumer.prefetched.clear();
       setPercent(0);
     }
     function destroy() {
       if (consumer.disposed) return;
+      stopQualityTransition(consumer);
       cancelSettledRange(consumer);
       consumer.disposed = true; consumer.ready = false; store.consumers.delete(consumer);
       consumer.progressVersion++;
@@ -1168,7 +1212,30 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
       get currentTime() { return consumer.actualIndex < 0 ? 0 : consumer.actualIndex / sequence.frameCount * sequence.duration; },
       get index() { return consumer.actualIndex; }, get ready() { return consumer.ready; }});
   }
-  window.OrbitFrameCache = Object.freeze({create, setPagePreviewReady, resetPageManualSelections, isDemandOnly:() => demandOnly});
+  function firstPreview(page, config, maxBytes) {
+    const api = window.ComicPanelPlayer, seen = new Set();
+    if (!api) return null;
+    for (const parent of page.panels || []) {
+      if (!api.displayable(parent, page)) continue;
+      const regions = api.interactionRegions(parent, page);
+      if (api.requiresInteractionLayout(parent) && !regions.length) continue;
+      const overrides = regions.length ? api.regionMediaOverrides(parent, page) || [] : [];
+      const panels = regions.length ? regions.map(region => overrides.find(item => item.region.id === region.id)?.panel || parent) : [parent];
+      for (const panel of panels) {
+        if (seen.has(panel.id) || !api.displayable(panel, page)) continue;
+        seen.add(panel.id);
+        const sequence = boundSequence(panel, page, config);
+        const preview = sequence && boundPreview(panel, page, sequence, config);
+        if (preview && preview.pack.byteLength <= maxBytes) return preview;
+      }
+    }
+    return null;
+  }
+  async function verifyPreview(preview, bytes) {
+    // The regular pack parser verifies its table, whole body and every WebP row.
+    await unpack({subtle:window.crypto.subtle}, preview.pack, bytes);
+  }
+  window.OrbitFrameCache = Object.freeze({create, setPagePreviewReady, resetPageManualSelections, firstPreview, verifyPreview, isDemandOnly:() => demandOnly});
 })();
 
 ;
@@ -2870,7 +2937,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     const bounded = isBoundedOrbit(panel,page);
     host.addEventListener('comic-phone-angle', event => {
       const {epoch, delta} = event.detail || {};
-      if (document.body.dataset.orbitInput !== 'gyro' || !seekReady() || !Number.isFinite(delta)) return;
+      if (document.body.dataset.pageGesture === 'pinch' || document.body.dataset.orbitInput !== 'gyro' || !seekReady() || !Number.isFinite(delta)) return;
       if (sensorEpoch !== epoch || sensorPhase === null) {
         cancelMotion();
         sensorEpoch = epoch;
@@ -2882,7 +2949,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       requestPercent(sensorPhase);
     });
     host.addEventListener('pointerdown', event => {
-      if (document.body.dataset.orbitInput === 'gyro' || !seekReady() || (event.pointerType === 'mouse' && event.button !== 0)) return;
+      if (dragging || document.body.dataset.pageGesture === 'pinch' || document.body.dataset.orbitInput === 'gyro' || !seekReady() || (event.pointerType === 'mouse' && event.button !== 0)) return;
       if (transparentPair) host.focus({preventScroll:true});
       const width = host.getBoundingClientRect().width * (region ? region.artworkRect.width / b.width : 1);
       pause();
@@ -2893,7 +2960,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       if (motion) motion.begin(dragging.percent, event.clientX, performance.now());
     });
     host.addEventListener('pointermove', event => {
-      if (!dragging || event.pointerId !== dragging.id) return;
+      if (document.body.dataset.pageGesture === 'pinch' || !dragging || event.pointerId !== dragging.id) return;
       const dx = Math.abs(event.clientX - dragging.x), dy = Math.abs(event.clientY - dragging.y);
       if (!dragging.travelled && dx >= 8 && dx > dy) {
         dragging.travelled = true;
@@ -3058,6 +3125,14 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.values(value).forEach(freeze); Object.freeze(value); }
     return value;
   }
+  async function inspect(page, bytes) {
+    const entry = indexEntry(page);
+    if (!bytes.byteLength || bytes.byteLength > 1024 * 1024) throw new Error('Invalid page frame config size');
+    const digest = await window.crypto.subtle.digest('SHA-256', bytes);
+    const actual = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+    if (actual !== entry.sha256.toLowerCase()) throw new Error('Page frame config SHA-256 mismatch');
+    return freeze(validate(JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(bytes)), page));
+  }
   async function ensure(page, signal, modelReady) {
     const attempt = ++generation;
     if (active) active.abort();
@@ -3085,7 +3160,8 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       }
       else {
         if (!window.crypto || !window.crypto.subtle || typeof window.crypto.subtle.digest !== 'function') throw new Error('Verified frame loading unavailable');
-        let bytes = await window.ComicEarlySourceMasks?.packet(page.source, entry.source, entry.sha256.toLowerCase(), controller.signal);
+        let bytes = window.ComicNextPageWarmup?.packet(page, entry.source, entry.sha256)
+          || await window.ComicEarlySourceMasks?.packet(page.source, entry.source, entry.sha256.toLowerCase(), controller.signal);
         assertCurrent();
         if (!bytes) {
           const response = await fetch(`${entry.source}?sha256=${entry.sha256.toLowerCase()}`, {signal:controller.signal, cache:'force-cache'});
@@ -3110,7 +3186,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       if (active === controller) active = null;
     }
   }
-  window.ComicPageFrames = Object.freeze({ensure});
+  window.ComicPageFrames = Object.freeze({ensure, inspect, route:indexEntry});
 })();
 
 ;
@@ -3142,14 +3218,97 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   const dialogs = new Map();
   const chapterOf = page => book.chapters.find(ch => page >= ch.start && page <= ch.end);
 
+  // Optional adjacent-page bodies stay private until navigation. The normal
+  // loaders revalidate every transferred body before publishing current state.
+  function createInteractionWarmup() {
+    let job = null, adopted = null;
+    function discard() {
+      if (job) job.controller.abort();
+      job = null; adopted = null;
+    }
+    function valid(item) { return job === item && !item.controller.signal.aborted; }
+    async function read(item, source, hash, length, media = false) {
+      if (!valid(item)) throw new DOMException('Page changed', 'AbortError');
+      const init = {signal:item.controller.signal, cache:'force-cache', priority:'low'};
+      const response = media && window.ComicAssetDelivery?.fetch
+        ? await window.ComicAssetDelivery.fetch(source, hash, init)
+        : await fetch(`${source}?sha256=${hash}`, init);
+      if (!response.ok || !response.body?.getReader) throw new Error('Optional next-page response unavailable');
+      const reader = response.body.getReader(), bytes = new Uint8Array(length);
+      let offset = 0, complete = false;
+      try {
+        for (;;) {
+          const chunk = await reader.read();
+          if (!valid(item)) throw new DOMException('Page changed', 'AbortError');
+          if (chunk.done) break;
+          if (offset + chunk.value.byteLength > length) throw new Error('Optional next-page body exceeds budget');
+          bytes.set(chunk.value, offset); offset += chunk.value.byteLength;
+        }
+        if (!offset || media && offset !== length) throw new Error('Optional next-page body size mismatch');
+        complete = true; return bytes.slice(0, offset).buffer;
+      } finally {
+        if (!complete) { try { await reader.cancel(); } catch (_) {} }
+        reader.releaseLock();
+      }
+    }
+    async function start(page) {
+      discard();
+      const modelRoute = window.ComicModelPacket?.(page.page);
+      if (!modelRoute || !window.ComicPageModels?.inspect || !window.ComicPageFrames?.inspect || !window.OrbitFrameCache?.firstPreview) return;
+      let frameRoute;
+      try { frameRoute = window.ComicPageFrames.route(page); } catch (_) { return; }
+      const item = {page, controller:new AbortController(), packets:new Map(), complete:false}; job = item;
+      const modelSource = modelRoute.url.split('?')[0];
+      try {
+        const modelBytes = window.ComicPageModels.isReady(page) ? null
+          : await read(item, modelSource, modelRoute.sha256, 100 * 1024);
+        const model = modelBytes ? await window.ComicPageModels.inspect(page, modelBytes) : page;
+        if (!valid(item)) return;
+        const modelLength = modelBytes?.byteLength || 0;
+        const frameBytes = await read(item, frameRoute.source, frameRoute.sha256, 100 * 1024 - modelLength);
+        const config = await window.ComicPageFrames.inspect(model, frameBytes);
+        if (!valid(item)) return;
+        const preview = window.OrbitFrameCache.firstPreview(model, config, 350 * 1024);
+        if (!preview || modelLength + frameBytes.byteLength + preview.pack.byteLength > 450 * 1024) { discard(); return; }
+        const previewBytes = await read(item, preview.pack.source, preview.pack.sha256, preview.pack.byteLength, true);
+        await window.OrbitFrameCache.verifyPreview(preview, previewBytes);
+        if (!valid(item)) return;
+        if (modelBytes) item.packets.set(modelSource + ':' + modelRoute.sha256, modelBytes);
+        item.packets.set(frameRoute.source + ':' + frameRoute.sha256, frameBytes);
+        item.packets.set(preview.pack.source + ':' + preview.pack.sha256, previewBytes);
+        item.complete = true;
+      } catch (_) { if (job === item) discard(); }
+    }
+    function take(page) {
+      adopted = null;
+      if (job?.complete && job.page.id === page.id && job.page.sha256 === page.sha256) adopted = job;
+      if (job && job !== adopted) job.controller.abort();
+      job = null;
+    }
+    function packet(page, source, hash) {
+      if (!adopted || page && (adopted.page.id !== page.id || adopted.page.sha256 !== page.sha256)) return null;
+      const key = source + ':' + hash.toLowerCase(), bytes = adopted.packets.get(key);
+      adopted.packets.delete(key);
+      return bytes || null;
+    }
+    const api = Object.freeze({packet, preview(source, hash) {
+      const bytes = packet(null, source, hash);
+      return bytes ? new Response(bytes, {status:200, headers:{'Content-Type':'application/octet-stream'}}) : null;
+    }});
+    window.ComicNextPageWarmup = api;
+    return {start, take, discard, navigate() { if (job) job.controller.abort(); job = null; }};
+  }
+  const interactionWarmup = createInteractionWarmup();
+
   // A single optional original can follow a fully usable page on a reliable
-  // fast link. It never starts the neighboring page's player or metadata.
+  // fast link. A bounded verified preview may follow without starting a player.
   function createOriginalWarmup() {
     const connection = navigator.connection;
     let direction = 1, timer = null, entry = null, attempted = false, blocked = false;
     const stopTimer = () => { clearTimeout(timer); timer = null; };
-    const discard = () => {
+    const discard = (keepInteraction = false) => {
       stopTimer();
+      if (!keepInteraction) interactionWarmup.discard();
       if (!entry) return;
       entry.image.onload = null; entry.image.onerror = null;
       entry.image.removeAttribute('src'); entry = null;
@@ -3181,6 +3340,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
         img.onload = () => {
           if (entry !== item) return;
           if (img.naturalWidth !== page.width || img.naturalHeight !== page.height) { item.failed = true; discard(); }
+          else if (usablePage()) void interactionWarmup.start(page);
         };
         img.onerror = () => { if (entry === item) { item.failed = true; discard(); } };
         img.src = artwork;
@@ -3194,11 +3354,12 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible') discard(); else queue();
     });
-    connection?.addEventListener?.('change', () => { if (!usablePage()) discard(); else queue(); });
+    connection?.addEventListener?.('change', () => { discard(); if (usablePage()) queue(); });
     window.addEventListener('pagehide', interrupt);
     return Object.freeze({
       take(page, artwork) {
         stopTimer();
+        interactionWarmup.take(page);
         const item = entry;
         if (item && !item.failed && item.page.id === page.id && item.page.sha256 === page.sha256 && item.artwork === artwork) {
           entry = null;
@@ -3206,10 +3367,10 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
           item.image.fetchPriority = 'high';
           return item.image;
         }
-        discard(); return null;
+        discard(true); return null;
       },
       navigate(number) {
-        discard();
+        discard(true); interactionWarmup.navigate();
         if (loadToken > 0 && number !== current) direction = Math.sign(number - current);
         attempted = false; blocked = false;
       }
@@ -3217,7 +3378,231 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   }
   const originalWarmup = createOriginalWarmup();
 
+  // The reading area owns touch gestures; mouse and keyboard retain the
+  // existing panel controls. A pinch keeps its page point beneath the midpoint.
+  function createPageGesture() {
+    const touches = new Map();
+    let locked = false, pinch = null, pan = null, ignoreClickUntil = 0;
+    const point = event => ({x:event.clientX, y:event.clientY});
+    const capture = id => { try { viewport.setPointerCapture(id); } catch (_) {} };
+    function setLocked(value) {
+      if (locked === value) return;
+      locked = value;
+      document.body.dataset.pageGesture = value ? 'pinch' : 'idle';
+      document.dispatchEvent(new Event('comic-page-gesture-change'));
+    }
+    function geometry() {
+      const [a,b] = [...touches.values()];
+      return {x:(a.x + b.x) / 2, y:(a.y + b.y) / 2,
+        distance:Math.max(1, Math.hypot(b.x - a.x, b.y - a.y))};
+    }
+    function beginPinch() {
+      setLocked(true); pan = null; clearPageTurn();
+      // pause cancels inertia and any pending manual HD selection before a
+      // second pointer can replace the panel's first pointer.
+      players.forEach(player => player.pause());
+      const center = geometry(), rect = stage.getBoundingClientRect();
+      pinch = {...center, zoom,
+        anchorX:(center.x - rect.left) / Math.max(1, rect.width),
+        anchorY:(center.y - rect.top) / Math.max(1, rect.height)};
+      for (const id of touches.keys()) capture(id);
+    }
+    function consume(event) { event.preventDefault(); event.stopImmediatePropagation(); }
+    function reset() {
+      const ids = [...touches.keys()];
+      touches.clear(); pinch = pan = null; setLocked(false);
+      for (const id of ids) {
+        try { if (viewport.hasPointerCapture(id)) viewport.releasePointerCapture(id); } catch (_) {}
+      }
+    }
+    viewport.addEventListener('pointerdown', event => {
+      if (event.pointerType !== 'touch' || !loaded || document.querySelector('dialog[open]')) return;
+      touches.set(event.pointerId, point(event));
+      if (touches.size >= 2) {
+        if (!locked || touches.size === 2 && !pinch) beginPinch();
+        else capture(event.pointerId);
+        consume(event); return;
+      }
+      // Outside an orbitable panel, one finger still scrolls a zoomed page.
+      if (!event.target.closest('.panel-host:not([data-background-only="true"])') || document.body.dataset.orbitInput === 'gyro') {
+        pan = {id:event.pointerId, ...point(event), left:viewport.scrollLeft, top:viewport.scrollTop};
+        capture(event.pointerId);
+      }
+    }, {capture:true, passive:false});
+    window.addEventListener('pointermove', event => {
+      if (event.pointerType !== 'touch' || !touches.has(event.pointerId)) return;
+      touches.set(event.pointerId, point(event));
+      if (locked) {
+        if (touches.size === 2 && pinch) {
+          const center = geometry();
+          zoom = Math.max(1, Math.min(5, pinch.zoom * center.distance / pinch.distance));
+          fitting = zoom <= 1; sizeStage();
+          const rect = stage.getBoundingClientRect();
+          viewport.scrollLeft += rect.left + pinch.anchorX * rect.width - center.x;
+          viewport.scrollTop += rect.top + pinch.anchorY * rect.height - center.y;
+        }
+        consume(event);
+      } else if (pan?.id === event.pointerId) {
+        viewport.scrollLeft = pan.left - (event.clientX - pan.x);
+        viewport.scrollTop = pan.top - (event.clientY - pan.y);
+        event.preventDefault();
+      }
+    }, {capture:true, passive:false});
+    function finish(event) {
+      if (event.pointerType !== 'touch' || !touches.has(event.pointerId)) return;
+      const wasLocked = locked;
+      touches.delete(event.pointerId);
+      if (pan?.id === event.pointerId) pan = null;
+      if (wasLocked) {
+        ignoreClickUntil = performance.now() + 350;
+        // Do not hand the last finger back to panel orbit. A new one-finger
+        // orbit may begin only after the whole multi-touch gesture has ended.
+        pinch = touches.size === 2 ? {...geometry(), zoom,
+          anchorX:0, anchorY:0} : null;
+        if (pinch) {
+          const rect = stage.getBoundingClientRect();
+          pinch.anchorX = (pinch.x - rect.left) / Math.max(1, rect.width);
+          pinch.anchorY = (pinch.y - rect.top) / Math.max(1, rect.height);
+        }
+        if (!touches.size) setLocked(false);
+        consume(event);
+      }
+    }
+    window.addEventListener('pointerup', finish, {capture:true, passive:false});
+    window.addEventListener('pointercancel', finish, {capture:true, passive:false});
+    // A lost capture is a cancellation, including browser interruption. A
+    // pointer captured by a panel is deliberately transferred at pinch start.
+    viewport.addEventListener('lostpointercapture', event => {
+      if (event.target === viewport) finish(event);
+    }, true);
+    for (const type of ['click','dblclick']) viewport.addEventListener(type, event => {
+      if (locked || performance.now() < ignoreClickUntil) consume(event);
+    }, true);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) reset(); });
+    window.addEventListener('pagehide', reset);
+    return Object.freeze({reset});
+  }
+  const pageGesture = createPageGesture();
+
+  const directoryThumbnails = {2:'ui-assets/directory/page-002-5ea06412b259.webp',36:'ui-assets/directory/page-036-7940008d7245.webp',60:'ui-assets/directory/page-060-c01a4d9ddf0e.webp'};
+  const readerToolsText = (key, values = {}) => window.ComicLocaleUI?.t(key, values) || String({
+    sharePage:'分享这一页',shareCopied:'本页链接已复制',shareCancelled:'已取消分享',copyLink:'复制链接',copyManual:'请选中下面的内容并复制',copySuccess:'已复制',reportTitle:'记录本页问题',reportNote:'这份记录留在你的浏览器里。复制后，可自行发送给制作方。',reportPage:'页码',reportLanguage:'语言',reportReady:'可互动画面',reportNetwork:'网络',reportCategory:'问题类型',reportDescription:'补充说明（选填）',reportLink:'本页链接',reportEmpty:'无',networkOnline:'在线',networkOffline:'离线',networkUnknown:'未提供连接类型',networkSaveData:'节省流量已开启',issueLoading:'加载速度',issueRotation:'转动与操作',issueText:'文字与翻译',issueOther:'其他',reportCopy:'复制问题记录'
+  }[key] || key).replace(/\{(\w+)\}/g,(_,name)=>values[name] == null ? '' : String(values[name]));
+  function currentPageURL() {
+    const url = new URL(location.href);
+    url.hash = `page=${current}`;
+    url.searchParams.set('lang', $('reading-language').value);
+    return url.href;
+  }
+  let toolsStatusTimer = null, statusKey = '';
+  function toolsStatus(key) {
+    statusKey = key;
+    const output = $('reader-tool-status');
+    output.hidden = !key;
+    output.textContent = key ? readerToolsText(key) : '';
+    clearTimeout(toolsStatusTimer);
+    if (key) toolsStatusTimer = setTimeout(() => { output.hidden = true; statusKey = ''; }, 5000);
+  }
+  async function writeClipboard(value) {
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(value);
+  }
+  function readerToolsMessage(id, key) {
+    $(id).dataset.messageKey = key;
+    $(id).textContent = key ? readerToolsText(key) : '';
+  }
+  function manualShare(value) {
+    $('share-link').value = value;
+    readerToolsMessage('share-copy-status', 'copyManual');
+    dialogOpen($('share-dialog'), $('share-page'));
+    $('share-link').focus(); $('share-link').select();
+  }
+  async function copyPageLink(value) {
+    try { await writeClipboard(value); toolsStatus('shareCopied'); }
+    catch (_) { manualShare(value); }
+  }
+  $('share-page').addEventListener('click', async event => {
+    if (!event.isTrusted) return;
+    const url = currentPageURL();
+    if (typeof navigator.share === 'function') {
+      try {
+        // Invoke before any await so the system share sheet keeps user activation.
+        await navigator.share({title:'Just Cuz', url});
+        return;
+      } catch (error) {
+        if (error?.name === 'AbortError') { toolsStatus('shareCancelled'); return; }
+      }
+    }
+    await copyPageLink(url);
+  });
+  $('copy-share-link').addEventListener('click', async () => {
+    try { await writeClipboard($('share-link').value); readerToolsMessage('share-copy-status', 'copySuccess'); }
+    catch (_) {
+      readerToolsMessage('share-copy-status', 'copyManual');
+      $('share-link').focus(); $('share-link').select();
+    }
+  });
+  $('close-share').addEventListener('click', () => $('share-dialog').close());
+  const issueKeys = {loading:'issueLoading',rotation:'issueRotation',text:'issueText',other:'issueOther'};
+  function reportText() {
+    const hosts = [...panelLayer.querySelectorAll('.panel-host:not([data-background-only="true"])')];
+    const count = hosts.filter(host => host.dataset.interactionState === 'ready').length;
+    const language = $('reading-language').selectedOptions[0]?.textContent || $('reading-language').value;
+    const connection = navigator.connection;
+    const network = [readerToolsText(navigator.onLine === false ? 'networkOffline' : 'networkOnline'),
+      connection?.effectiveType || readerToolsText('networkUnknown'),
+      connection?.saveData ? readerToolsText('networkSaveData') : ''].filter(Boolean).join(' · ');
+    const field = (key,value) => `${readerToolsText(key)}: ${value}`;
+    return ['Just Cuz',field('reportPage',`${current} / ${pages.length}`),field('reportLanguage',language),
+      field('reportCategory',readerToolsText(issueKeys[$('report-category').value] || 'issueOther')),
+      field('reportDescription',$('report-description').value.trim() || readerToolsText('reportEmpty')),
+      field('reportReady',`${count} / ${hosts.length}`),field('reportNetwork',network),field('reportLink',currentPageURL())].join('\n');
+  }
+  function refreshReaderTools() {
+    if (statusKey) $('reader-tool-status').textContent = readerToolsText(statusKey);
+    for (const id of ['share-copy-status','report-copy-status']) {
+      const key = $(id).dataset.messageKey;
+      if (key) $(id).textContent = readerToolsText(key);
+    }
+    if ($('report-dialog').open) {
+      const value = reportText();
+      if ($('report-preview').value !== value) $('report-preview').value = value;
+    }
+  }
+  $('report-page').addEventListener('click', () => {
+    $('report-category').value = 'loading'; $('report-description').value = '';
+    readerToolsMessage('report-copy-status', '');
+    $('report-preview').value = reportText();
+    dialogOpen($('report-dialog'), $('report-page'));
+    $('report-category').focus();
+  });
+  $('report-category').addEventListener('change', refreshReaderTools);
+  $('report-description').addEventListener('input', refreshReaderTools);
+  $('copy-report').addEventListener('click', async () => {
+    const value = reportText(); $('report-preview').value = value;
+    try { await writeClipboard(value); readerToolsMessage('report-copy-status', 'copySuccess'); }
+    catch (_) {
+      readerToolsMessage('report-copy-status', 'copyManual');
+      $('report-preview').focus(); $('report-preview').select();
+    }
+  });
+  $('close-report').addEventListener('click', () => $('report-dialog').close());
+  window.ComicReaderTools = Object.freeze({refresh:refreshReaderTools});
+
   book.chapters.forEach(ch => {
+    if (directoryThumbnails[ch.start]) {
+      const card = document.createElement('button'); card.type = 'button';
+      card.className = 'directory-story'; card.dataset.chapter = ch.id;
+      card.dataset.start = String(ch.start);
+      const cover = document.createElement('img'); cover.width = 96; cover.height = 120;
+      cover.alt = ''; cover.decoding = 'async'; cover.fetchPriority = 'low';
+      cover.dataset.thumbnailSource = directoryThumbnails[ch.start];
+      const title = document.createElement('span'); title.className = 'directory-story-title'; title.textContent = ch.title;
+      const range = document.createElement('span'); range.className = 'directory-story-range'; range.textContent = `${ch.start}–${ch.end}`;
+      card.append(cover, title, range);
+      card.addEventListener('click', () => { $('directory-dialog').close(); showPage(ch.start); });
+      $('directory-story-cards').append(card);
+    }
     const option = document.createElement('option');
     option.value = ch.start;
     option.textContent = `${ch.title} · ${ch.start}–${ch.end} 页`;
@@ -3240,7 +3625,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     dialogs.set(dialog, opener || document.activeElement);
     if (!dialog.open) dialog.showModal();
   }
-  for (const id of ['directory-dialog', 'original-dialog', 'panel-sources-dialog', 'book-about-dialog']) {
+  for (const id of ['directory-dialog', 'original-dialog', 'panel-sources-dialog', 'book-about-dialog', 'share-dialog', 'report-dialog']) {
     const dialog = $(id);
     dialog.addEventListener('close', () => {
       if (id === 'panel-sources-dialog') clearSourceCrops();
@@ -3254,13 +3639,24 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     });
   }
   $('open-directory').addEventListener('click', () => {
+    for (const cover of $('directory-story-cards').querySelectorAll('img[data-thumbnail-source]')) {
+      if (!cover.getAttribute('src')) cover.src = cover.dataset.thumbnailSource;
+    }
+    for (const card of $('directory-story-cards').querySelectorAll('.directory-story')) {
+      if (card.dataset.chapter === chapterOf(current)?.id) card.setAttribute('aria-current','location');
+      else card.removeAttribute('aria-current');
+    }
     document.querySelectorAll('.page-thumb').forEach(button => {
       if (Number(button.dataset.page) === current) button.setAttribute('aria-current', 'page');
       else button.removeAttribute('aria-current');
     });
     dialogOpen($('directory-dialog'), $('open-directory'));
     const selected = document.querySelector(`.page-thumb[data-page="${current}"]`);
-    if (selected) { selected.scrollIntoView({block:'nearest'}); selected.focus({preventScroll:true}); }
+    const chapterCard = $('directory-story-cards').querySelector('.directory-story[aria-current="location"]');
+    if (chapterCard) {
+      $('directory-dialog').scrollTop = 0;
+      chapterCard.focus({preventScroll:true});
+    } else if (selected) { selected.scrollIntoView({block:'nearest'}); selected.focus({preventScroll:true}); }
   });
   $('close-directory').addEventListener('click', () => $('directory-dialog').close());
   $('close-original').addEventListener('click', () => $('original-dialog').close());
@@ -3385,6 +3781,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     $('zoom-in').disabled = zoom >= 5;
   }
   function setZoom(value, fit = false) {
+    pageGesture.reset();
     clearPageTurn();
     const oldX = (viewport.scrollLeft + viewport.clientWidth / 2) / Math.max(1, inner.offsetWidth);
     const oldY = (viewport.scrollTop + viewport.clientHeight / 2) / Math.max(1, inner.offsetHeight);
@@ -3589,6 +3986,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   function showPage(number) {
     number = Math.trunc(Number(number));
     if (!Number.isFinite(number) || number < 1 || number > pages.length) return;
+    pageGesture.reset();
     clearPageTurn();
     const direction = number > current ? 'forward' : 'back';
     const previousSheet = number === current ? null : capturePageTurn();
@@ -4111,8 +4509,8 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
     sourcesNote:['这里保留每一格的完整原画和原文字，可以和互动视角一起看。','Each panel keeps its complete original artwork and lettering, alongside the interactive views.','各コマの原画と原文を残しています。動かせる視点と見比べられます。','각 칸의 원화와 원문을 온전히 보존하여 인터랙티브 시점과 함께 볼 수 있어요.','Здесь сохранены полные оригиналы кадров и надписи для сравнения с интерактивными ракурсами.','Chaque case conserve son illustration et son texte d’origine, à comparer avec les vues interactives.'],
     sourcesPage:['第 {n} 页 · {count} 格原画','Page {n} · {count} original panels','{n}ページ · 原画{count}コマ','{n}쪽 · 원화 {count}칸','Страница {n} · Оригинальных кадров: {count}','Page {n} · {count} cases originales'],
     aboutTitle:['一起读故事','Read together','一緒に物語を読もう','함께 이야기를 읽어요','Читаем вместе','Lisons ensemble'],
-    aboutDrag:['左右拖动单格换视角，松手会缓缓停下。双击或按 Home 回到原画；放大后可在书页里移动阅读。','Drag a panel left or right to change views; release to ease to a stop. Double-click or press Home to reset. Zoom in to move around the page.','コマを左右にドラッグして視点を変更。離すとゆっくり止まります。ダブルクリックか Home で原画へ。拡大後はページ内を移動できます。','칸을 좌우로 드래그하면 시점이 바뀌고, 놓으면 천천히 멈춰요. 두 번 클릭하거나 Home을 누르면 원화로 돌아가요. 확대한 페이지 안에서 이동할 수 있어요.','Тяните кадр влево или вправо для смены ракурса. Отпустите для плавной остановки. Двойной щелчок или Home возвращает оригинал. Увеличенную страницу можно прокручивать.','Faites glisser une case à gauche ou à droite pour changer d’angle. Relâchez pour ralentir. Double-cliquez ou appuyez sur Home pour revenir à l’original. Zoomez pour parcourir la page.'],
-    aboutOriginal:['每一页静态和复位均保留完整原画。页面只准备当前页的互动，先打开轻量全角度预览，再补清晰画面。','The complete original stays visible when still or reset. Only the current page prepares interaction: lightweight all-angle previews first, then sharper images.','静止時とリセット時は原画全体を表示します。現在のページだけを準備し、全角度の軽量プレビューの後に高精細画像を読み込みます。','정지 및 복원 시 전체 원화를 보존해요. 현재 페이지의 인터랙션만 준비하며, 모든 각도의 가벼운 미리보기 뒤에 선명한 그림을 불러와요.','При остановке и сбросе сохраняется полный оригинал. Готовится только текущая страница: сначала лёгкий предпросмотр всех ракурсов, затем чёткие изображения.','L’original complet reste visible à l’arrêt et après réinitialisation. Seule la page actuelle prépare ses interactions : aperçu léger de tous les angles, puis images plus nettes.'],
+    aboutDrag:["单指左右拖动单格换视角；双指缩放并移动书页。松手会缓缓停下，双击或按 Home 回到原画。","Drag a panel with one finger to change views. Use two fingers to zoom and move the page. Release to ease to a stop; double-click or press Home to reset.","1本指でコマを左右に動かして視点を変更。2本指でページを拡大・移動できます。離すとゆっくり停止。ダブルクリックか Home で原画へ戻ります。","한 손가락으로 칸을 좌우로 드래그해 시점을 바꾸세요. 두 손가락으로 페이지를 확대하고 이동할 수 있어요. 놓으면 천천히 멈추며, 두 번 클릭하거나 Home을 누르면 원화로 돌아가요.","Одним пальцем вращайте кадр, двумя — увеличивайте и перемещайте страницу. Отпустите для плавной остановки; двойной щелчок или Home вернёт оригинал.","Faites glisser une case avec un doigt pour changer d’angle. Deux doigts permettent de zoomer et de déplacer la page. Relâchez pour ralentir ; double-clic ou Home pour revenir à l’original."],
+    aboutOriginal:["静止和复位时展示完整原画。先准备轻量全角度预览，再按角度补清晰画面；快网空闲时会预备下一页。","The complete original remains visible at rest and on reset. Lightweight all-angle previews load first, followed by detail for the chosen view. A fast idle connection can prepare the next page.","静止時とリセット時は原画全体を表示します。全角度の軽量プレビューを先に読み込み、選んだ視点を高精細化します。高速回線の空き時間には次のページも準備します。","정지 및 복원 시 전체 원화를 보여 줘요. 가벼운 전체 각도 미리보기를 먼저 열고 선택한 시점의 선명한 그림을 준비해요. 빠른 연결이 한가할 때 다음 페이지를 미리 준비할 수 있어요.","В покое и после сброса виден полный оригинал. Сначала загружаются лёгкие ракурсы, затем детали выбранного вида. При быстром свободном соединении может готовиться следующая страница.","L’original complet reste visible au repos et après réinitialisation. Les aperçus légers arrivent d’abord, puis les détails de l’angle choisi. Une connexion rapide au repos peut préparer la page suivante."],
     aboutRefining:['本合集仍在优化中，部分环绕视角有人物和环境细节偏差。','This collection is still being refined. Some orbit views have character or environment detail differences.','この作品集は調整中です。一部の回転視点では人物や背景の細部に差があります。','이 모음집은 개선 중이며 일부 회전 시점에서 인물이나 배경의 세부 차이가 있어요.','Сборник ещё дорабатывается. На некоторых ракурсах детали персонажей и окружения могут отличаться.','Ce recueil est encore en cours d’amélioration. Certains angles présentent des différences dans les détails des personnages ou du décor.'],
     musicGroup:['背景音乐控制','Background music controls','BGM操作','배경 음악 설정','Управление фоновой музыкой','Commandes de musique'],
     musicVolume:['背景音乐音量','Background music volume','BGM音量','배경 음악 음량','Громкость фоновой музыки','Volume de la musique'],
@@ -4169,6 +4567,7 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
     loadWait:['完成后拖动更流畅，请稍候','Please wait for smoother dragging','滑らかに動かすため、少々お待ちください','원활한 드래그를 위해 잠시 기다려 주세요','Подождите для плавного вращения','Patientez pour un défilement plus fluide'],
     loadDescription:['{title}，{label} {percent}%，{hint}','{title}, {label}: {percent}%. {hint}','{title}、{label} {percent}%。{hint}','{title}, {label} {percent}%. {hint}','{title}, {label}: {percent}%. {hint}','{title}, {label} : {percent} %. {hint}']
   };
+  Object.assign(rows, {"directoryStories":["三个小故事","Three little stories","三つの物語","세 가지 이야기","Три истории","Trois petites histoires"],"sharePage":["分享这一页","Share this page","このページを共有","이 페이지 공유","Поделиться страницей","Partager cette page"],"shareInstruction":["链接会保留当前页码和阅读语言。","The link keeps this page and reading language.","今のページと読む言語をリンクに残します。","현재 페이지와 읽기 언어가 링크에 저장돼요.","Ссылка сохранит эту страницу и язык чтения.","Le lien conserve cette page et la langue de lecture."],"shareCopied":["本页链接已复制","Page link copied","ページのリンクをコピーしました","페이지 링크를 복사했어요","Ссылка на страницу скопирована","Lien de la page copié"],"shareCancelled":["已取消分享","Sharing cancelled","共有をキャンセルしました","공유를 취소했어요","Публикация отменена","Partage annulé"],"copyLink":["复制链接","Copy link","リンクをコピー","링크 복사","Копировать ссылку","Copier le lien"],"copyManual":["请选中下面的内容并复制。","Select the text below and copy it.","下の内容を選択してコピーしてください。","아래 내용을 선택하여 복사해 주세요.","Выделите текст ниже и скопируйте его.","Sélectionnez le texte ci-dessous et copiez-le."],"copySuccess":["已复制","Copied","コピーしました","복사했어요","Скопировано","Copié"],"reportTitle":["记录本页问题","Note a page issue","このページの問題を記録","페이지 문제 기록","Записать проблему страницы","Noter un problème de page"],"reportNote":["这份记录留在你的浏览器里。复制后，可自行发送给制作方。","This note stays in your browser. Copy it to send to the creator yourself.","この記録はブラウザ内だけに残ります。コピーして制作者に送れます。","이 기록은 브라우저 안에만 있어요. 복사한 뒤 직접 제작자에게 보낼 수 있어요.","Запись остаётся в браузере. Вы можете скопировать её и сами отправить автору.","Cette note reste dans votre navigateur. Copiez-la pour l’envoyer vous-même au créateur."],"reportPage":["页码","Page","ページ","페이지","Страница","Page"],"reportLanguage":["阅读语言","Reading language","読む言語","읽기 언어","Язык чтения","Langue de lecture"],"reportReady":["可互动画面","Interactive panels ready","操作できるコマ","조작 가능한 칸","Готовые интерактивные кадры","Cases interactives prêtes"],"reportNetwork":["网络状况","Connection","接続状態","네트워크 상태","Соединение","Connexion"],"reportCategory":["问题类型","Issue type","問題の種類","문제 유형","Тип проблемы","Type de problème"],"reportDescription":["补充说明（选填）","Details (optional)","補足（任意）","설명 (선택 사항)","Подробности (необязательно)","Précisions (facultatif)"],"reportPlaceholder":["例如：拖动最下面一格时，画面没有变化。","For example: the bottom panel does not change when I drag it.","例：一番下のコマをドラッグしても画面が変わらない。","예: 맨 아래 칸을 드래그해도 화면이 바뀌지 않아요.","Например: нижний кадр не меняется при перетаскивании.","Exemple : la case du bas ne change pas quand je la fais glisser."],"reportPreview":["问题记录预览","Issue note preview","記録のプレビュー","문제 기록 미리보기","Предпросмотр записи","Aperçu de la note"],"reportLink":["本页链接","Page link","ページのリンク","페이지 링크","Ссылка на страницу","Lien de la page"],"reportEmpty":["无","None","なし","없음","Нет","Aucune"],"networkOnline":["在线","Online","オンライン","온라인","В сети","En ligne"],"networkOffline":["离线","Offline","オフライン","오프라인","Не в сети","Hors ligne"],"networkUnknown":["未提供连接类型","Connection type unavailable","接続の種類は不明","연결 유형 확인 불가","Тип соединения неизвестен","Type de connexion indisponible"],"networkSaveData":["节省流量已开启","Data saving is on","データ節約が有効","데이터 절약 모드 켜짐","Экономия трафика включена","Économie de données activée"],"issueLoading":["加载速度","Loading speed","読み込み速度","로딩 속도","Скорость загрузки","Vitesse de chargement"],"issueRotation":["转动与操作","Turning and controls","回転と操作","회전 및 조작","Вращение и управление","Rotation et commandes"],"issueText":["文字与翻译","Text and translation","文字と翻訳","텍스트 및 번역","Текст и перевод","Texte et traduction"],"issueOther":["其他","Other","その他","기타","Другое","Autre"],"reportCopy":["复制问题记录","Copy issue note","問題の記録をコピー","문제 기록 복사","Копировать запись","Copier la note"]});
   const strings = Object.fromEntries(languages.map((language,index) => [language,Object.freeze(Object.fromEntries(Object.entries(rows).map(([key,values]) => [key,values[index]])))]));
   window.COMIC_UI_STRINGS = Object.freeze(strings);
   const $ = id => document.getElementById(id);
@@ -4210,6 +4609,10 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
     if (document.title !== t('documentTitle')) document.title = t('documentTitle');
     const texts = {'prev-page':'prev','next-page':'next','open-directory':'directory','retry-interaction':'retryInteraction','page-loading':'openingPage','retry-page':'reopen','fit-page':'fit','original-button':'viewOriginal','reset-panels':'reset','book-about':'about','close-directory':'close','close-original':'close','original-download':'saveOriginal','panel-sources-title':'fullPanels','panel-sources-note':'sourcesNote','close-panel-sources':'close','book-about-title':'aboutTitle','close-book-about':'close','close-bilingual':'close','dynamic-note':'previewNote'};
     for (const [id,key] of Object.entries(texts)) setText($(id),t(key));
+    for (const [id,key] of Object.entries({'share-page':'sharePage','share-title':'sharePage','share-instruction':'shareInstruction','copy-share-link':'copyLink','close-share':'close','report-page':'reportTitle','report-title':'reportTitle','report-note':'reportNote','close-report':'close','report-category-label':'reportCategory','report-description-label':'reportDescription','report-preview-label':'reportPreview','copy-report':'reportCopy'})) setText($(id),t(key));
+    setAttr($('directory-story-cards'),'aria-label',t('directoryStories'));
+    setAttr($('report-description'),'placeholder',t('reportPlaceholder'));
+    for (const [value,key] of Object.entries({loading:'issueLoading',rotation:'issueRotation',text:'issueText',other:'issueOther'})) setText(document.querySelector(`#report-category option[value="${value}"]`),t(key));
     for (const [query,key] of Object.entries({'.book-title .eyebrow':'eyebrow','.book-title h1':'bookTitle','.intro':'intro','#source-panel-count':'independentDrag','#dynamic-count':'doubleReset','#page-jump label':'pagePrefix','#page-jump .jump-button':'go','.help':'help','.footer-signature':'footer','.return-note':'returnNote','#page-error p':'pageError'})) setText(document.querySelector(query),t(key));
     setText($('book-count'),t('bookCount',vars)); setText(document.querySelector('#page-jump > span'),t('pageOf',vars));
     setText($('current-page-label'),t('pageLabel',vars)); setText($('page-progress'),t('pageProgress',vars));
@@ -4227,6 +4630,8 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
       const option = document.querySelector(`#chapter-select option[value="${Number(chapter.start)}"]`);
       setText(option,t('chapterRange',{title,start:chapter.start,end:chapter.end}));
       setText(document.querySelectorAll('#directory-content section > h3')[index],title);
+      const card = document.querySelector(`.directory-story[data-chapter="${chapter.id}"]`);
+      if (card) { setText(card.querySelector('.directory-story-title'),title); setAttr(card,'aria-label',t('chapterRange',{title,start:chapter.start,end:chapter.end})); }
     }
     document.querySelectorAll('.page-thumb[data-page]').forEach(element => setAttr(element,'aria-label',t('openPage',{n:element.dataset.page})));
     document.querySelectorAll('#book-about-dialog .directory-content > p').forEach((element,index) => { const key = ['aboutDrag','aboutOriginal','aboutRefining'][index]; if (key) setText(element,t(key)); });
@@ -4246,6 +4651,7 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
       const match = (host.dataset.sourcePanelId || '').match(/^page-(\d+)-panel-(\d+)$/);
       if (match) setAttr(host,'aria-label',t('panelDragLabel',{n:Number(match[1]),panel:Number(match[2])}));
     });
+    window.ComicReaderTools?.refresh();
     // This localizer does not set data-state, hidden, disabled, media or player readiness.
   }
   let queued = false;
