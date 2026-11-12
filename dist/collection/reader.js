@@ -1212,8 +1212,11 @@ window.COMIC_INTERACTION_LAYOUTS = Object.freeze({"schemaVersion":1,"coordinateS
     if (!image?.complete || !verifiedRoute || x + width > image.naturalWidth ||
         y + height > image.naturalHeight) return null;
 
-    const response = await fetch(`source-mask-assets/${entry.maskFile}?sha256=${entry.maskSHA256}`,
+    const early = window.ComicEarlySourceMasks?.take(entry.pageFile, entry.pageSHA256, entry.maskFile, entry.maskSHA256, signal);
+    let response = early ? await early : null;
+    if (!response && !signal.aborted) response = await fetch(`source-mask-assets/${entry.maskFile}?sha256=${entry.maskSHA256}`,
       {signal, cache: 'force-cache'});
+    if (!response) return null;
     if (!response.ok) return null;
     const bytes = await response.arrayBuffer();
     if (bytes.byteLength !== entry.maskBytes || await digest(bytes) !== entry.maskSHA256 || signal.aborted) return null;
@@ -2661,6 +2664,54 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       if (!frameRenderer || frameFailed || retryVideo) startVideoLoad(retryVideo);
       updateAvailability();
     }
+    function prepareFailedRetry() {
+      if (disposed || host.dataset.interactionState !== 'error' && host.dataset.loadingFailed !== 'true') return null;
+      if (frameRenderer && (frameLoadFailed || frameFailed || previewFailed > 0)) {
+        const target = frameTargetPercent !== null ? frameTargetPercent : displayTime() / displayDuration() * 100;
+        pause();
+        clearTimeout(seekDispatch); seekDispatch = null; seekDispatchStarted = 0;
+        clearTimeout(timer); clearTimeout(loadTimer);
+        desired = null; issued = null; inFlight = false;
+        if (videoFailed || seekFailed) {
+          videoStarted = false; metadata = false; decoded = false;
+          video.removeAttribute('src'); video.load();
+        }
+        const old = frameRenderer;
+        frameRenderer = null;
+        old.destroy(); old.canvas.remove();
+        frameFailed = false; frameLoadFailed = false; loadedFrames = 0;
+        previewLoaded = 0; previewTotal = 0; previewFailed = 0;
+        previewReady = false; previewActive = false; frameMode = false;
+        host.dataset.frameReady = 'false';
+        // A disposed store retains only verified complete previews and a small
+        // verified angle. Its replacement has fresh request/error ownership.
+        return () => {
+          if (disposed) return;
+          loadFrames();
+          if (frameRenderer) {
+            frameTargetPercent = target;
+            frameRenderer.setPercent(target);
+            frameRenderer.settleManual?.();
+            if (loadFailed) {
+              loadFailed = false;
+              loadLettering(); loadProtection(); loadCryCleanup();
+            }
+            videoMessage = ''; retry.hidden = true;
+            updateAvailability();
+          } else {
+            startLoad();
+          }
+        };
+      }
+      // Non-frame failures retain the existing protection/video recovery.
+      return () => { if (!disposed) startLoad(); };
+    }
+    function retryFailed() {
+      const recover = prepareFailedRetry();
+      if (!recover) return false;
+      recover();
+      return true;
+    }
     function tryStartPlayback() {
       if (!pendingPlay || !protectedReady() || !videoReady() || seekFailed || inFlight) return;
       if (Math.abs(video.currentTime - playTarget) >= .002 || video.seeking) {
@@ -2699,7 +2750,8 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       if (expected !== null) { videoMessage = ''; confirmDrag(); }
       updateAvailability();
     });
-    if (window.OrbitFrameCache && new URLSearchParams(location.search).get('frames') !== 'off') {
+    function loadFrames() {
+      if (!window.OrbitFrameCache || new URLSearchParams(location.search).get('frames') === 'off') return;
       frameRenderer = window.OrbitFrameCache.create(panel, page, {
         onReady(actual) {
           if (disposed || frameFailed || !frameRenderer) return;
@@ -2754,6 +2806,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
         host.insertBefore(canvas, video);
       }
     }
+    loadFrames();
 
     // Transparent full-page rendering has an independent hit surface. The L
     // keeps the original pair draggable; frame alpha adds visible protrusions
@@ -2813,7 +2866,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     resetButton.addEventListener('click', reset);
     host.addEventListener('dblclick', event => { event.preventDefault(); reset(); });
     slider.addEventListener('input', () => { const percent = slider.value; cancelMotion(); requestPercent(percent); });
-    retry.addEventListener('click', startLoad);
+    retry.addEventListener('click', () => { if (!retryFailed()) startLoad(); });
     const bounded = isBoundedOrbit(panel,page);
     host.addEventListener('comic-phone-angle', event => {
       const {epoch, delta} = event.detail || {};
@@ -2873,7 +2926,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     let observer = null;
     if ('IntersectionObserver' in window) { observer = new IntersectionObserver(entries => { if (!entries[0].isIntersecting) pause(); }); observer.observe(host); }
     startLoad();
-    return {pause, reset, setBackdropVisible, destroy() { disposed = true; clearTimeout(seekDispatch); seekDispatch = null; seekDispatchStarted = 0; releaseCryCleanup(); if(cloudPainter)cloudPainter.destroy(); stopEdgeCallback(); if (edgeCanvas) { edgeCanvas.width = 0; edgeCanvas.height = 0; } pendingPlay = false; protectionAttempt++; clearTimeout(letteringTimer); if (letteringImage) { cancelProtectionRecovery(letteringImage); window.ComicSourceMasks?.cancel(letteringImage); letteringImage.onload = null; letteringImage.onerror = null; letteringImage.removeAttribute('src'); } if (motion) motion.destroy(); if (frameRenderer) frameRenderer.destroy(); dragging = null; video.pause(); updateActual(); clearTimeout(timer); clearTimeout(loadTimer); clearTimeout(protectionTimer); if (protectionLoader) { cancelProtectionRecovery(protectionLoader); window.ComicSourceMasks?.cancel(protectionLoader); protectionLoader.onload = null; protectionLoader.onerror = null; protectionLoader.removeAttribute('src'); } if (observer) observer.disconnect(); if (videoStarted) { video.removeAttribute('src'); video.load(); } host.remove(); row.remove(); }};
+    return {pause, reset, retryFailed, prepareFailedRetry, setBackdropVisible, destroy() { disposed = true; clearTimeout(seekDispatch); seekDispatch = null; seekDispatchStarted = 0; releaseCryCleanup(); if(cloudPainter)cloudPainter.destroy(); stopEdgeCallback(); if (edgeCanvas) { edgeCanvas.width = 0; edgeCanvas.height = 0; } pendingPlay = false; protectionAttempt++; clearTimeout(letteringTimer); if (letteringImage) { cancelProtectionRecovery(letteringImage); window.ComicSourceMasks?.cancel(letteringImage); letteringImage.onload = null; letteringImage.onerror = null; letteringImage.removeAttribute('src'); } if (motion) motion.destroy(); if (frameRenderer) frameRenderer.destroy(); dragging = null; video.pause(); updateActual(); clearTimeout(timer); clearTimeout(loadTimer); clearTimeout(protectionTimer); if (protectionLoader) { cancelProtectionRecovery(protectionLoader); window.ComicSourceMasks?.cancel(protectionLoader); protectionLoader.onload = null; protectionLoader.onerror = null; protectionLoader.removeAttribute('src'); } if (observer) observer.disconnect(); if (videoStarted) { video.removeAttribute('src'); video.load(); } host.remove(); row.remove(); }};
   }
   window.ComicPanelPlayer = Object.freeze({sourceScenePresentation,sourceCloudPresentation,setSourceCloudActivity,eligible, displayable, requiresInteractionLayout, interactionRegions, createFixedProtectionOverlay, viewPhaseMapping, frameEdgeExtension, regionMediaOverrides, isBoundRegionMedia, regionMediaCacheBinding, isTransparentStompLayer, isTransparentCryLayer, isBoundedOrbit, editorialViewFraming, sourceReferenceFrameAtRest, transparentFrameCrop, create});
 })();
@@ -3032,10 +3085,14 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       }
       else {
         if (!window.crypto || !window.crypto.subtle || typeof window.crypto.subtle.digest !== 'function') throw new Error('Verified frame loading unavailable');
-        const response = await fetch(`${entry.source}?sha256=${entry.sha256.toLowerCase()}`, {signal:controller.signal, cache:'force-cache'});
+        let bytes = await window.ComicEarlySourceMasks?.packet(page.source, entry.source, entry.sha256.toLowerCase(), controller.signal);
         assertCurrent();
-        if (!response.ok) throw new Error('Page frame config HTTP error');
-        const bytes = await response.arrayBuffer(); assertCurrent();
+        if (!bytes) {
+          const response = await fetch(`${entry.source}?sha256=${entry.sha256.toLowerCase()}`, {signal:controller.signal, cache:'force-cache'});
+          assertCurrent();
+          if (!response.ok) throw new Error('Page frame config HTTP error');
+          bytes = await response.arrayBuffer(); assertCurrent();
+        }
         if (!bytes.byteLength || bytes.byteLength > 1024 * 1024) throw new Error('Invalid page frame config size');
         const digest = await window.crypto.subtle.digest('SHA-256', bytes); assertCurrent();
         const actualSHA = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
@@ -3084,6 +3141,81 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   let zoom = 1, fitting = true, fitScale = 1, players = [];
   const dialogs = new Map();
   const chapterOf = page => book.chapters.find(ch => page >= ch.start && page <= ch.end);
+
+  // A single optional original can follow a fully usable page on a reliable
+  // fast link. It never starts the neighboring page's player or metadata.
+  function createOriginalWarmup() {
+    const connection = navigator.connection;
+    let direction = 1, timer = null, entry = null, attempted = false, blocked = false;
+    const stopTimer = () => { clearTimeout(timer); timer = null; };
+    const discard = () => {
+      stopTimer();
+      if (!entry) return;
+      entry.image.onload = null; entry.image.onerror = null;
+      entry.image.removeAttribute('src'); entry = null;
+    };
+    function usablePage() {
+      if (!loaded || document.visibilityState !== 'visible' || document.querySelector('dialog[open]') ||
+          !connection || connection.saveData || connection.effectiveType !== '4g' ||
+          !Number.isFinite(connection.downlink) || connection.downlink <= 2.25) return false;
+      const hosts = [...panelLayer.querySelectorAll('.panel-host:not([data-background-only="true"])')];
+      return hosts.length > 0 && hosts.every(({dataset:d}) =>
+        d.interactionState === 'ready' && d.loadingFailed !== 'true' && d.anglePending !== 'true' &&
+        (d.renderMode === 'video' || Number(d.totalFrames) > 0 && Number(d.loadedFrames) >= Number(d.totalFrames) ||
+          d.previewReady === 'true' && Number(d.previewTotal) > 0 && Number(d.previewFailed) === 0 &&
+          Number(d.previewLoaded) >= Number(d.previewTotal)));
+    }
+    function queue() {
+      if (blocked || attempted || timer !== null || entry || !usablePage()) return;
+      const token = loadToken;
+      timer = setTimeout(() => {
+        timer = null;
+        if (token !== loadToken || blocked || attempted || !usablePage()) return;
+        attempted = true;
+        const page = pages[current + direction - 1];
+        if (!page || !Number.isSafeInteger(page.bytes) || page.bytes < 1 || page.bytes > 512 * 1024) return;
+        const artwork = window.ComicReadingArtwork?.(page.source, page.sha256) || page.source;
+        const img = new Image(); img.decoding = 'async'; img.fetchPriority = 'low';
+        img.width = page.width; img.height = page.height;
+        const item = {page, artwork, image:img, failed:false}; entry = item;
+        img.onload = () => {
+          if (entry !== item) return;
+          if (img.naturalWidth !== page.width || img.naturalHeight !== page.height) { item.failed = true; discard(); }
+        };
+        img.onerror = () => { if (entry === item) { item.failed = true; discard(); } };
+        img.src = artwork;
+      }, 1000);
+    }
+    function interrupt() { blocked = true; discard(); }
+    panelLayer.addEventListener('pointerdown', event => {
+      if (event.target.closest('.panel-host')) interrupt();
+    }, {capture:true, passive:true});
+    document.addEventListener('comic-page-previews-ready', queue);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') discard(); else queue();
+    });
+    connection?.addEventListener?.('change', () => { if (!usablePage()) discard(); else queue(); });
+    window.addEventListener('pagehide', interrupt);
+    return Object.freeze({
+      take(page, artwork) {
+        stopTimer();
+        const item = entry;
+        if (item && !item.failed && item.page.id === page.id && item.page.sha256 === page.sha256 && item.artwork === artwork) {
+          entry = null;
+          item.image.onload = null; item.image.onerror = null;
+          item.image.fetchPriority = 'high';
+          return item.image;
+        }
+        discard(); return null;
+      },
+      navigate(number) {
+        discard();
+        if (loadToken > 0 && number !== current) direction = Math.sign(number - current);
+        attempted = false; blocked = false;
+      }
+    });
+  }
+  const originalWarmup = createOriginalWarmup();
 
   book.chapters.forEach(ch => {
     const option = document.createElement('option');
@@ -3304,7 +3436,13 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   document.addEventListener('comic-hd-budget-change', queuePanelStatus);
   if ($('retry-interaction')) $('retry-interaction').addEventListener('click', () => {
     window.ComicAssetDelivery?.retryFailed?.();
-    showPage(current);
+    // Recover only interrupted players. Healthy siblings keep their decoded
+    // previews, selected angles and gesture state while that panel recovers.
+    const recoveries = players.map(player => player.prepareFailedRetry?.()).filter(recover => typeof recover === 'function');
+    // Dispose all interrupted consumers before replacing any shared frame store.
+    recoveries.forEach(recover => recover());
+    if (!recoveries.length && !panelLayer.querySelector('.panel-host')) showPage(current);
+    else queuePanelStatus();
   });
 
   function clearPlayers() {
@@ -3455,9 +3593,12 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     const direction = number > current ? 'forward' : 'back';
     const previousSheet = number === current ? null : capturePageTurn();
     const page = pages[number - 1];
+    window.ComicEarlySourceMasks?.cancelUnless(page.source, page.sha256);
     let artwork = window.ComicReadingArtwork?.(page.source,page.sha256) || page.source;
     const earlyReady = loadToken === 0 && window.ComicEarlyOriginal?.(page,artwork);
     if (typeof earlyReady === 'string') artwork = earlyReady;
+    const warmedOriginal = originalWarmup.take(page, artwork);
+    originalWarmup.navigate(number);
     current = number; loaded = false; const token = ++loadToken;
     if (frameConfigController) frameConfigController.abort();
     frameConfigController = new AbortController();
@@ -3522,7 +3663,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       queueMicrotask(originalReady);
       return;
     }
-    imageLoader = new Image();
+    imageLoader = warmedOriginal || new Image();
     imageLoader.fetchPriority = 'high'; imageLoader.decoding = 'async';
     imageLoader.width = page.width; imageLoader.height = page.height;
     const failArtwork = () => {
@@ -3544,7 +3685,10 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       originalReady();
     };
     imageLoader.onerror = failArtwork;
-    imageLoader.src = artwork;
+    if (warmedOriginal && imageLoader.complete) {
+      if (imageLoader.naturalWidth === page.width && imageLoader.naturalHeight === page.height) queueMicrotask(originalReady);
+      else failArtwork();
+    } else if (!warmedOriginal) imageLoader.src = artwork;
   }
   $('prev-page').addEventListener('click', () => showPage(current - 1));
   $('next-page').addEventListener('click', () => showPage(current + 1));
@@ -3708,9 +3852,9 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     const quietPreview = !complete && previewReady;
     const deferredHD = quietPreview && state !== 'error' && !!window.OrbitFrameCache?.isDemandOnly();
     const gyroReady = document.body.dataset.orbitInput === 'gyro' && (previewReady || complete);
-    const mobileDrag = phone.matches && (previewReady || complete) && !gyroReady;
+    const mobileDrag = state !== 'error' && phone.matches && (previewReady || complete) && !gyroReady;
     const title = text('loadScene');
-    const label = text(mobileDrag ? 'loadTry' : state === 'error' ? 'loadError' : phone.matches ? 'loadTab' : quietPreview ? 'loadDrag' : previewPhase ? 'loadPreview' : 'loadOrbit');
+    const label = text(state === 'error' ? 'loadError' : mobileDrag ? 'loadTry' : phone.matches ? 'loadTab' : quietPreview ? 'loadDrag' : previewPhase ? 'loadPreview' : 'loadOrbit');
     const hint = text(state === 'error' ? 'loadRetry' : quietPreview ? 'loadDragHD' : previewPhase ? 'loadFirst' : percent === 99 ? 'loadLast' : 'loadWait');
     const description = mobileDrag || deferredHD ? label : text('loadDescription',{title,label,percent,hint});
     if (record.number.textContent !== `${percent}%`) record.number.textContent = `${percent}%`;
@@ -3723,7 +3867,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     if (record.badge.title !== description) record.badge.title = description;
     const mobileState = mobileDrag ? 'drag' : 'progress';
     if (record.badge.dataset.mobileState !== mobileState) record.badge.dataset.mobileState = mobileState;
-    const hidden = gyroReady || (mobileDrag ? draggedPanels.has(panelKey(host)) : complete || deferredHD && record.badge.dataset.tiny === 'true');
+    const hidden = state !== 'error' && (gyroReady || (mobileDrag ? draggedPanels.has(panelKey(host)) : complete || deferredHD && record.badge.dataset.tiny === 'true'));
     if (record.badge.hidden !== hidden) record.badge.hidden = hidden;
   }
   function remove(record) {
@@ -3917,7 +4061,7 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
   'use strict';
   const languages = ['zh','en','ja','ko','ru','fr'];
   const rows = {
-    documentTitle:['Just Cuz · 会转动的故事书（优化中）','Just Cuz · A Turning Storybook (in progress)','Just Cuz · 回せる絵本（制作中）','Just Cuz · 돌려 보는 이야기책 (개선 중)','Just Cuz · Книга с разных сторон (в работе)','Just Cuz · Le livre à faire tourner (en cours)'],
+    documentTitle:['Just Cuz · 会转动的故事书','Just Cuz · A Turning Storybook','Just Cuz · 回せる絵本','Just Cuz · 돌려 보는 이야기책','Just Cuz · Книга с разных сторон','Just Cuz · Le livre à faire tourner'],
     eyebrow:['翻开今天的小故事','Open a little story today','今日の小さな物語を開こう','오늘의 작은 이야기를 펼쳐요','Откройте маленькую историю','Ouvrez une petite histoire'],
     bookTitle:['会转动的故事书','A Turning Storybook','回せる絵本','돌려 보는 이야기책','Книга с разных сторон','Le livre à faire tourner'],
     intro:['从合集首页出发，和 Mandy、Cuz 一起读完三个小故事。','Start at the cover and read three little stories with Mandy and Cuz.','表紙から Mandy、Cuz と三つの物語を読もう。','표지부터 Mandy, Cuz와 세 가지 이야기를 읽어요.','Начните с обложки и прочтите три истории с Mandy и Cuz.','Depuis la couverture, lisez trois histoires avec Mandy et Cuz.'],
@@ -3954,7 +4098,7 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
     reset:['复位本页','Reset this page','このページを戻す','이 페이지 복원','Сбросить эту страницу','Rétablir cette page'],
     help:['拖动一格，发现另一面 ✦ 松手缓缓停下 · 双击回到原画','Drag a panel to discover another side ✦ Release to ease to a stop · Double-click to reset','コマをドラッグして別の面へ ✦ 離すとゆっくり停止 · ダブルクリックで原画へ','한 칸을 드래그해 다른 면을 보세요 ✦ 놓으면 천천히 멈춰요 · 두 번 클릭하면 원화로','Перетащите кадр, чтобы увидеть другую сторону ✦ Отпустите для плавной остановки · Двойной щелчок — оригинал','Faites glisser une case pour voir un autre angle ✦ Relâchez pour ralentir · Double-clic pour revenir à l’original'],
     previewNote:['互动体验草稿，画面仍在优化中。','Interactive preview, artwork still being refined.','インタラクティブ体験版。画面は引き続き調整中です。','인터랙티브 미리보기이며 그림은 계속 다듬고 있어요.','Интерактивный предпросмотр, изображения ещё дорабатываются.','Aperçu interactif, illustrations encore en cours d’amélioration.'],
-    footer:['JUST CUZ ✦ 会转动的故事书 · 优化中','JUST CUZ ✦ A Turning Storybook · In progress','JUST CUZ ✦ 回せる絵本 · 制作中','JUST CUZ ✦ 돌려 보는 이야기책 · 개선 중','JUST CUZ ✦ Книга с разных сторон · В работе','JUST CUZ ✦ Le livre à faire tourner · En cours'],
+    footer:['JUST CUZ ✦ 会转动的故事书','JUST CUZ ✦ A Turning Storybook','JUST CUZ ✦ 回せる絵本','JUST CUZ ✦ 돌려 보는 이야기책','JUST CUZ ✦ Книга с разных сторон','JUST CUZ ✦ Le livre à faire tourner'],
     about:['阅读说明','Reading guide','読み方','읽기 안내','Как читать','Guide de lecture'],
     returnNote:['下次打开，接着这一页读','Continue from this page next time','次回もこのページから','다음에도 이 페이지부터','В следующий раз продолжите с этой страницы','Reprenez à cette page la prochaine fois'],
     directoryTitle:['三集故事 · {total} 页','Three stories · {total} pages','三つの物語 · {total}ページ','세 가지 이야기 · {total}쪽','Три истории · {total} стр.','Trois histoires · {total} pages'],

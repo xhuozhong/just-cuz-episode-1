@@ -7,4 +7,5 @@ docs/collection-loading-q38.json -text
 # Preserve every checked publication/source byte on Windows and CI.
 dist/** -text
 release-source/q291/** -text
+release-source/q294/** -text
 docs/pages-release-manifest.json -text

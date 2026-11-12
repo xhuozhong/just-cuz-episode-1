@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#fff8e7">
-  <title>Just Cuz · 魔法故事书（优化中）</title>
+  <title>Just Cuz · 会转动的故事书</title>
   <script id="current-original-preload">
     (() => {
       'use strict';
@@ -86,6 +86,97 @@
       } catch (_) {}
     })();
   </script>
+  <script id="current-source-mask-hints">
+(() => {
+  'use strict';
+  if (navigator.connection?.saveData || !window.crypto?.subtle || typeof AbortController !== 'function') return;
+  const original = document.getElementById('current-page-original-preload');
+  const source = original?.dataset.originalSource;
+  const shard = document.getElementById('current-page-shard-preload');
+  const route = shard?.getAttribute('href');
+  const match = route?.match(/^frame-config\/(page-\d{3})-([a-f0-9]{12})\.json\?sha256=([a-f0-9]{64})$/);
+  if (!match || source !== 'pages/' + match[1] + '.jpg' || match[2] !== match[3].slice(0, 12)) return;
+  const controller = new AbortController(), transfers = new Map();
+  const checksum = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('');
+  const sha = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+  let pageHash = null, originalReady = false;
+  const discard = () => {
+    clearTimeout(timer);
+    original.removeEventListener('load', begin);
+    removeEventListener('hashchange', turn);
+    removeEventListener('pagehide', discard);
+    controller.abort();
+    for (const item of transfers.values()) item.discard();
+    transfers.clear();
+  };
+  const turn = () => {
+    const next = location.hash.match(/^#page=(\d+)$/);
+    if (next && Number(next[1]) !== Number(match[1].slice(5))) discard();
+  };
+  // This consumes the same current-page preload. The regular loader receives
+  // these exact bytes and still performs all of its ordinary checks.
+  const packet = fetch(route, {signal:controller.signal, cache:'force-cache'}).then(async response => {
+    if (!response.ok) return null;
+    const bytes = await response.arrayBuffer();
+    if (!bytes.byteLength || bytes.byteLength > 1024 * 1024 || await checksum(bytes) !== match[3] || controller.signal.aborted) return null;
+    const value = JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(bytes));
+    if (value.schemaVersion !== 1 || !Array.isArray(value.entries)) return null;
+    const rows = Array.isArray(value.sourceMasks) ? value.sourceMasks : [];
+    if (rows.length && rows.every(row => row.pageFile === source && sha(row.pageSHA256) && row.pageSHA256 === rows[0].pageSHA256)) pageHash = rows[0].pageSHA256;
+    return {bytes, rows};
+  }).catch(() => null);
+  async function begin() {
+    originalReady = true;
+    const ready = await packet;
+    if (!ready || controller.signal.aborted || !pageHash) return;
+    const masks = new Map();
+    for (const row of ready.rows) {
+      if (row.pageFile !== source || row.pageSHA256 !== pageHash || !/^[a-zA-Z0-9-]+\.png$/.test(row.maskFile) ||
+          !sha(row.maskSHA256) || !Number.isSafeInteger(row.maskBytes) || row.maskBytes < 1 || row.maskBytes > 65536) return;
+      const prior = masks.get(row.maskFile);
+      if (prior && (prior.maskSHA256 !== row.maskSHA256 || prior.maskBytes !== row.maskBytes)) return;
+      masks.set(row.maskFile, row);
+    }
+    if (masks.size > 8 || [...masks.values()].reduce((sum, row) => sum + row.maskBytes, 0) > 65536) return;
+    for (const row of masks.values()) {
+      const abort = new AbortController();
+      const stop = () => abort.abort();
+      controller.signal.addEventListener('abort', stop, {once:true});
+      const response = fetch('source-mask-assets/' + row.maskFile + '?sha256=' + row.maskSHA256,
+        {signal:abort.signal, cache:'force-cache', priority:'low'}).then(value => {
+          if (value.ok) return value;
+          void value.body?.cancel().catch(() => {});
+          return null;
+        }).catch(() => null);
+      transfers.set(row.maskFile, {
+        hash:row.maskSHA256, response,
+        discard() { controller.signal.removeEventListener('abort', stop); stop(); },
+        take(signal) { signal.addEventListener('abort', stop, {once:true}); return response; }
+      });
+    }
+  }
+  const timer = setTimeout(discard, 15000);
+  original.addEventListener('load', begin, {once:true});
+  addEventListener('pagehide', discard, {once:true});
+  addEventListener('hashchange', turn);
+  window.ComicEarlySourceMasks = Object.freeze({
+    cancelUnless(nextSource, nextHash) { if (nextSource !== source || pageHash && nextHash !== pageHash) discard(); },
+    async packet(pageSource, path, hash, signal) {
+      if (pageSource !== source || route !== path + '?sha256=' + hash || signal.aborted || controller.signal.aborted) return null;
+      signal.addEventListener('abort', discard, {once:true});
+      return (await packet)?.bytes ?? null;
+    },
+    take(pageSource, hash, file, maskHash, signal) {
+      if (!originalReady || pageSource !== source || hash !== pageHash || signal.aborted || controller.signal.aborted) return null;
+      const item = transfers.get(file);
+      if (!item || item.hash !== maskHash) return null;
+      transfers.delete(file);
+      return item.take(signal);
+    }
+  });
+})();
+
+  </script>
   <script id="current-small-preview">
     (() => {
       if (navigator.connection?.saveData) return;
@@ -148,7 +239,7 @@
     })();
   </script>
   <link rel="stylesheet" href="reader-styles-7bb8a4d8661e.css">
-  <script defer src="reader.js?v=q291-on-demand-39f82e7842c9"></script>
+  <script defer src="reader.js?v=q293-reader-6176fb45bec7"></script>
   <script defer src="phone-orbit.js?v=8786f52f42c1"></script>
   <script id="page-model-loader">
 (() => {
@@ -218,6 +309,13 @@
   window.ComicPageModels = Object.freeze({ensure,pin,protection:page=>protectionResources.get(page)});
 })();
   </script>
+  <style id="reader-recovery-layout">
+    .reader-topline { flex-wrap:wrap; }
+    #current-page-label, #retry-interaction { flex-shrink:0; }
+    #page-caption { flex:1 1 10rem; min-width:0; overflow-wrap:anywhere; }
+    #retry-interaction { min-height:36px; white-space:nowrap; }
+    @media(max-width:600px) { #retry-interaction { min-height:44px; } }
+  </style>
 </head>
 <body>
   <audio id="background-music" preload="none" loop></audio>
