@@ -3416,7 +3416,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       }
     }
     viewport.addEventListener('pointerdown', event => {
-      if (event.pointerType !== 'touch' || !loaded || document.querySelector('dialog[open]') || event.target.closest('.panel-focus-entry')) return;
+      if (event.pointerType !== 'touch' || !loaded || document.querySelector('dialog[open]')) return;
       touches.set(event.pointerId, point(event));
       if (touches.size >= 2) {
         if (!locked || touches.size === 2 && !pinch) beginPinch();
@@ -3483,198 +3483,6 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     return Object.freeze({reset});
   }
   const pageGesture = createPageGesture();
-
-  // Single-panel reading reuses the live source composition and every player.
-  const panelFocus = (() => {
-    const languages = ['zh','en','ja','ko','ru','fr'];
-    const labels = {
-      open:['放大','Enlarge','拡大','확대','Крупнее','Agrandir'],
-      title:['单格阅读','Panel reading','コマを読む','한 칸 읽기','Чтение кадра','Lecture de la case'],
-      close:['返回整页','Back to page','ページに戻る','전체 페이지로','К странице','Retour à la page'],
-      hint:['左右拖动转动 · 双指缩放 · 双击还原视角','Drag to turn · Pinch to zoom · Double-click to reset','ドラッグで回転 · ピンチで拡大 · ダブルクリックで戻す','드래그하여 회전 · 두 손가락으로 확대 · 두 번 눌러 복원','Тяните для поворота · Щипок для масштаба · Двойное нажатие для сброса','Glissez pour tourner · Pincez pour zoomer · Double-clic pour rétablir'],
-      fit:['适合单格','Fit panel','コマ全体','한 칸 맞춤','Весь кадр','Case entière'],
-      zoomIn:['放大画面','Zoom in','画面を拡大','화면 확대','Увеличить','Agrandir la vue'],
-      zoomOut:['缩小画面','Zoom out','画面を縮小','화면 축소','Уменьшить','Réduire la vue'],
-      number:['第 {n} 格','Panel {n}','{n}コマ目','{n}번째 칸','Кадр {n}','Case {n}']
-    };
-    let language = 'zh', selection = null, entries = [], entryLayer = null, modal = null;
-    let frame, clip, heading, hint, back, fit, minus, plus, saved = null, focusZoom = 1;
-    let offsetX = 0, offsetY = 0, gesture = null, pinchLocked = false, ignoreClickUntil = 0;
-    let backPending = false, pendingOpen = null;
-    const touches = new Map();
-    const t = (key,n) => labels[key][Math.max(0,languages.indexOf(window.ComicLocaleUI?.language || language))].replace('{n}',n);
-    const emit = () => document.dispatchEvent(new CustomEvent('comic-panel-focus-change',{detail:{active:!!selection}}));
-    function consume(event) { event.preventDefault(); event.stopImmediatePropagation(); }
-    function geometry() {
-      const [a,b] = [...touches.values()];
-      return {x:(a.x+b.x)/2,y:(a.y+b.y)/2,distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y))};
-    }
-    function resetTouch() {
-      const ids = [...touches.keys()]; touches.clear(); gesture = null;
-      if (pinchLocked) { pinchLocked = false; document.body.dataset.pageGesture='idle'; document.dispatchEvent(new Event('comic-page-gesture-change')); }
-      for (const id of ids) { try { if(frame?.hasPointerCapture(id))frame.releasePointerCapture(id); } catch (_) {} }
-    }
-    function syncBadges() {
-      if(!selection)return;
-      for(const badge of panelLayer.querySelectorAll('.panel-loading-percent')){
-        badge.dataset.panelFocusCurrent=String(badge.dataset.sourcePanelId===selection.host.dataset.sourcePanelId && (badge.dataset.interactionRegion||'')===(selection.host.dataset.interactionRegion||''));
-      }
-    }
-    function layout() {
-      if (!selection || !frame) return;
-      syncBadges();
-      const q=selection.rect, page=selection.page;
-      const base=Math.min(Math.max(1,frame.clientWidth-16)/q.width,Math.max(1,frame.clientHeight-16)/q.height);
-      const scale=base*focusZoom, w=q.width*scale, h=q.height*scale;
-      offsetX=w<=frame.clientWidth?0:Math.max(-(w-frame.clientWidth)/2,Math.min((w-frame.clientWidth)/2,offsetX));
-      offsetY=h<=frame.clientHeight?0:Math.max(-(h-frame.clientHeight)/2,Math.min((h-frame.clientHeight)/2,offsetY));
-      // The viewport clips the same full-page coordinates. No image is cropped,
-      // redrawn, stretched, reloaded or converted into a second player.
-      Object.assign(clip.style,{width:`${w}px`,height:`${h}px`,left:`${(frame.clientWidth-w)/2+offsetX}px`,top:`${(frame.clientHeight-h)/2+offsetY}px`});
-      Object.assign(stage.style,{position:'absolute',margin:'0',width:`${page.width*scale}px`,height:`${page.height*scale}px`,left:`${-q.x*scale}px`,top:`${-q.y*scale}px`});
-      minus.disabled=focusZoom<=1;plus.disabled=focusZoom>=4;
-    }
-    function refresh() {
-      for (const item of entries) { item.button.textContent='↗ '+t('open'); item.button.setAttribute('aria-label',`${t('open')} · ${t('number',item.index+1)}`); }
-      if (!modal) return;
-      heading.textContent=selection?`${t('title')} · ${t('number',selection.index+1)}`:t('title');
-      hint.textContent=t('hint');back.textContent=t('close');fit.textContent=t('fit');
-      minus.setAttribute('aria-label',t('zoomOut'));plus.setAttribute('aria-label',t('zoomIn'));
-    }
-    function ensureModal() {
-      if (modal) return;
-      const style=document.createElement('style');style.id='comic-panel-focus-styles';style.textContent=`
-        .panel-focus-entries{position:absolute;inset:0;z-index:34;pointer-events:none}
-        .panel-focus-entry{position:absolute;transform:translate(-100%,-100%);pointer-events:auto;min-width:44px;min-height:44px;padding:5px 8px;border:1px solid #7a684b;border-radius:9px;background:#fff9e9e8;color:#57462f;box-shadow:0 1px 3px #55442225;font-family:inherit;font-weight:600;font-size:12px;line-height:1.2;white-space:nowrap;touch-action:manipulation}
-        .panel-focus-entry:focus-visible{outline:3px solid #236c92;outline-offset:2px}
-        .panel-focus-dialog{width:min(1120px,calc(100vw - 12px));height:calc(100dvh - 16px);max-height:calc(100dvh - 16px);max-width:calc(100vw - 12px);margin:auto;border-radius:14px;background:#fff8e7;overflow:hidden;padding:0;box-sizing:border-box}
-        .panel-focus-dialog[open]{display:flex;flex-direction:column}
-        .panel-focus-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:8px 10px;border-bottom:1px solid #d7c7a9;background:#fff9ec;flex:none}
-        .panel-focus-toolbar h2{font-family:inherit;font-weight:700;font-size:15px;line-height:1.3;margin:0;flex:1 1 100px}
-        .panel-focus-toolbar button{min-height:44px;min-width:44px;padding:7px 10px;font-size:13px}
-        .panel-focus-frame{position:relative;flex:1;min-height:120px;overflow:hidden;touch-action:none;isolation:isolate;background-color:#fbf3df;background-image:var(--story-grain,none);background-size:160px 160px}
-        .panel-focus-clip{position:absolute;overflow:hidden;background:white}
-        .panel-focus-clip .page-stage{box-shadow:none;max-width:none;touch-action:none}
-        .panel-focus-clip .panel-host{touch-action:none}
-        .panel-focus-dialog .panel-focus-entries{display:none}
-        .panel-focus-dialog .panel-loading-percent:not([data-panel-focus-current="true"]),.panel-focus-dialog .panel-loading-percent[data-mobile-state="drag"],.panel-focus-dialog .panel-loading-percent[data-state="ready"],.panel-focus-dialog .panel-loading-percent[data-hd-on-demand="true"]{display:none!important}
-        .panel-focus-hint{margin:0;padding:7px 10px;font-size:11px;line-height:1.4;color:#665640;flex:none;background:#fff9ec}
-        @media(max-width:420px){.panel-focus-toolbar{padding:7px;gap:4px}.panel-focus-toolbar h2{flex-basis:100%;font-size:14px}.panel-focus-toolbar button{padding:7px 8px}.panel-focus-hint{font-size:10px}}
-      `;document.head.append(style);
-      modal=document.createElement('dialog');modal.id='panel-focus-dialog';modal.className='panel-focus-dialog';modal.setAttribute('aria-labelledby','panel-focus-heading');modal.setAttribute('aria-describedby','panel-focus-hint');
-      const toolbar=document.createElement('div');toolbar.className='panel-focus-toolbar';
-      heading=document.createElement('h2');heading.id='panel-focus-heading';
-      back=document.createElement('button');back.type='button';back.id='panel-focus-close';back.addEventListener('click',()=>close());
-      fit=document.createElement('button');fit.type='button';fit.id='panel-focus-fit';fit.addEventListener('click',()=>{resetTouch();focusZoom=1;offsetX=offsetY=0;layout();});
-      minus=document.createElement('button');minus.type='button';minus.textContent='−';minus.id='panel-focus-minus';minus.addEventListener('click',()=>{focusZoom=Math.max(1,focusZoom/1.4);offsetX=offsetY=0;layout();});
-      plus=document.createElement('button');plus.type='button';plus.textContent='+';plus.id='panel-focus-plus';plus.addEventListener('click',()=>{focusZoom=Math.min(4,focusZoom*1.4);layout();});
-      toolbar.append(heading,minus,plus,fit,back);
-      frame=document.createElement('div');frame.className='panel-focus-frame';clip=document.createElement('div');clip.className='panel-focus-clip';frame.append(clip);
-      hint=document.createElement('p');hint.id='panel-focus-hint';hint.className='panel-focus-hint';modal.append(toolbar,frame,hint);document.body.append(modal);
-      modal.addEventListener('cancel',event=>{event.preventDefault();close();});
-      modal.addEventListener('close',()=>{if(selection&&!modal.open)close();});
-      modal.addEventListener('keydown',event=>{
-        if(event.key!=='Tab')return;
-        const items=[...modal.querySelectorAll('button:not([disabled]),.panel-host:not([inert]):not([data-background-only="true"])')].filter(n=>n.getAttribute('tabindex')!=='-1');
-        if(!items.length)return;const at=items.indexOf(document.activeElement);
-        if(event.shiftKey&&at<=0){event.preventDefault();items.at(-1).focus({preventScroll:true});}
-        else if(!event.shiftKey&&at===items.length-1){event.preventDefault();items[0].focus({preventScroll:true});}
-      });
-      frame.addEventListener('pointerdown',event=>{
-        if(event.pointerType!=='touch'||!selection)return;
-        touches.set(event.pointerId,{x:event.clientX,y:event.clientY});
-        if(touches.size>=2){
-          if(!pinchLocked){pinchLocked=true;document.body.dataset.pageGesture='pinch';document.dispatchEvent(new Event('comic-page-gesture-change'));players.forEach(p=>p.pause());}
-          const g=geometry();gesture={...g,zoom:focusZoom,offsetX,offsetY};
-          for(const id of touches.keys()){try{frame.setPointerCapture(id);}catch(_){}}
-          consume(event);
-        }
-      },{capture:true,passive:false});
-      window.addEventListener('pointermove',event=>{
-        if(!selection||!touches.has(event.pointerId))return;
-        touches.set(event.pointerId,{x:event.clientX,y:event.clientY});
-        if(!pinchLocked)return;
-        if(touches.size===2&&gesture){
-          const g=geometry(),r=frame.getBoundingClientRect();
-          focusZoom=Math.max(1,Math.min(4,gesture.zoom*g.distance/gesture.distance));
-          const ratio=focusZoom/gesture.zoom;
-          offsetX=g.x-r.left-r.width/2-ratio*(gesture.x-r.left-r.width/2-gesture.offsetX);
-          offsetY=g.y-r.top-r.height/2-ratio*(gesture.y-r.top-r.height/2-gesture.offsetY);layout();
-        }
-        consume(event);
-      },{capture:true,passive:false});
-      const finish=event=>{if(!selection||!touches.has(event.pointerId))return;touches.delete(event.pointerId);if(pinchLocked){gesture=null;ignoreClickUntil=performance.now()+350;if(!touches.size)resetTouch();consume(event);}};
-      window.addEventListener('pointerup',finish,{capture:true,passive:false});window.addEventListener('pointercancel',finish,{capture:true,passive:false});
-      frame.addEventListener('lostpointercapture',event=>{if(event.target===frame&&touches.has(event.pointerId))resetTouch();},true);
-      for(const type of ['click','dblclick'])frame.addEventListener(type,event=>{if(pinchLocked||performance.now()<ignoreClickUntil)consume(event);},true);
-      new ResizeObserver(layout).observe(frame);
-      new MutationObserver(syncBadges).observe(panelLayer,{childList:true});
-      refresh();
-    }
-    function close(options={}) {
-      if(!selection)return;
-      const prior=saved, marker=prior.marker;resetTouch();selection=null;saved=null;
-      prior.placeholder.replaceWith(stage);stage.style.cssText=prior.stageStyle;
-      for(const item of prior.hosts){item.host.inert=item.inert;item.host.tabIndex=item.tabIndex;}
-      for(const badge of panelLayer.querySelectorAll('.panel-loading-percent'))delete badge.dataset.panelFocusCurrent;
-      if(entryLayer)entryLayer.hidden=false;
-      if(modal.open)modal.close();delete document.body.dataset.panelFocus;
-      sizeStage();viewport.scrollLeft=prior.left;viewport.scrollTop=prior.top;
-      if(options.restoreFocus!==false&&prior.opener?.isConnected)prior.opener.focus({preventScroll:true});
-      if(history.state?.comicPanelFocus===marker){
-        if(options.restoreFocus===false)history.replaceState(prior.history,'',location.href);
-        else { backPending=true; history.back(); }
-      }
-      emit();
-    }
-    function open(item) {
-      if(backPending){pendingOpen=item;return;}
-      if(selection||!loaded||document.querySelector('dialog[open]'))return;
-      ensureModal();pageGesture.reset();clearPageTurn();players.forEach(p=>p.pause());
-      const placeholder=document.createComment('live-page-stage-focus-return');
-      const marker=`panel-${Date.now()}-${item.index}`;
-      saved={placeholder,stageStyle:stage.style.cssText,left:viewport.scrollLeft,top:viewport.scrollTop,opener:item.button,history:history.state,marker,hosts:[]};
-      selection=item;focusZoom=1;offsetX=offsetY=0;
-      for(const host of panelLayer.querySelectorAll('.panel-host')){saved.hosts.push({host,inert:host.inert,tabIndex:host.tabIndex});if(host!==item.host){host.inert=true;host.tabIndex=-1;}}
-      stage.replaceWith(placeholder);clip.append(stage);if(entryLayer)entryLayer.hidden=true;
-      document.body.dataset.panelFocus='active';refresh();modal.showModal();layout();
-      try{history.pushState({...history.state,comicPanelFocus:marker},'',location.href);}catch(_){}
-      back.focus({preventScroll:true});emit();
-    }
-    function mount(page) {
-      close({restoreFocus:false});entryLayer?.remove();entries=[];
-      entryLayer=document.createElement('div');entryLayer.className='panel-focus-entries';
-      const seen=new Set();
-      for(const host of panelLayer.querySelectorAll('.panel-host:not([data-background-only="true"])')){
-        const panel=(page.panels||[]).find(p=>p.id===host.dataset.sourcePanelId);if(!panel)continue;
-        const b=panel.bounds;let q=null;
-        if(host.dataset.interactionRect){try{const r=JSON.parse(host.dataset.interactionRect);q={x:b.x+r.x,y:b.y+r.y,width:r.width,height:r.height};}catch(_){continue;}}
-        else q={...b};
-        if(!q||![q.x,q.y,q.width,q.height].every(Number.isFinite)||q.x<0||q.y<0||q.width<=0||q.height<=0||q.x+q.width>page.width||q.y+q.height>page.height)continue;
-        const key=JSON.stringify(q);if(seen.has(key))continue;seen.add(key);
-        const button=document.createElement('button');button.type='button';button.className='panel-focus-entry';button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-controls','panel-focus-dialog');
-        const item={button,host,page,rect:q,index:entries.length};button.style.left=`${(q.x+q.width)/page.width*100}%`;button.style.top=`${(q.y+q.height)/page.height*100}%`;
-        // Entries are separate from the orbit surface, so a tap, double tap,
-        // drag, or two-finger page gesture keeps its established meaning.
-        for(const type of ['pointerdown','dblclick'])button.addEventListener(type,event=>event.stopPropagation());
-        button.addEventListener('click',event=>{event.stopPropagation();open(item);});entryLayer.append(button);entries.push(item);
-      }
-      stage.append(entryLayer);ensureModal();refresh();
-    }
-    document.addEventListener('comic-page-navigation-start',()=>{pendingOpen=null;close({restoreFocus:false});});
-    document.addEventListener('comic-language-change',event=>{language=event.detail?.language||language;queueMicrotask(refresh);});
-    document.addEventListener('visibilitychange',()=>{if(document.hidden)resetTouch();});
-    window.addEventListener('pagehide',()=>close({restoreFocus:false}));
-    window.addEventListener('popstate',()=>{
-      if(backPending){backPending=false;const next=pendingOpen;pendingOpen=null;if(next)queueMicrotask(()=>{if(next.host.isConnected)open(next);});return;}
-      if(selection&&history.state?.comicPanelFocus!==saved.marker)close({restoreFocus:false});
-    });
-    // Phone input may continue to control this live panel; sibling scenes keep
-    // their selected angles while they are outside the focused reading view.
-    document.addEventListener('comic-phone-angle',event=>{if(selection&&event.target!==selection.host)event.stopImmediatePropagation();},true);
-    const api=Object.freeze({mount,close,resize:layout,get active(){return !!selection;},get rect(){return selection?{...selection.rect}:null;}});
-    window.ComicPanelFocus=api;return api;
-  })();
 
   const directoryThumbnails = {2:'ui-assets/directory/page-002-5ea06412b259.webp',36:'ui-assets/directory/page-036-7940008d7245.webp',60:'ui-assets/directory/page-060-c01a4d9ddf0e.webp'};
   // A cached earlier HTML shell can load the current shared script URL.
@@ -4007,7 +3815,6 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   });
 
   function sizeStage() {
-    if (window.ComicPanelFocus?.active) { window.ComicPanelFocus.resize(); return; }
     const page = pages[current - 1];
     const viewportW = viewport.clientWidth;
     const viewportH = viewport.clientHeight;
@@ -4090,7 +3897,6 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   });
 
   function clearPlayers() {
-    window.ComicPanelFocus?.close({restoreFocus:false});
     window.OrbitFrameCache?.resetPageManualSelections?.();
     window.OrbitFrameCache?.setPagePreviewReady(false);
     players.forEach(player => player.destroy()); players = []; panelLayer.replaceChildren(); panelControls.replaceChildren(); panelControls.hidden = true;
@@ -4139,7 +3945,6 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     $('reset-panels').hidden = !players.length;
     $('reset-panels').textContent = '复位本页';
     panelControls.hidden = true; panelControls.inert = true; panelControls.setAttribute('aria-hidden', 'true');
-    panelFocus.mount(page);
     const done = candidatePanels.filter(p => p.quality === 'passed').length;
     const pendingPanel = candidatePanels.find(panel => !window.ComicPanelPlayer.displayable(panel, page));
     $('page-caption').textContent = interactionCount ? '拖动单格 · 双击还原视角' : pendingPanel && pendingPanel.pendingReason || '原画完整呈现';
@@ -4310,7 +4115,6 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     number = Math.trunc(Number(number));
     if (!Number.isFinite(number) || number < 1 || number > pages.length) return;
     pageGesture.reset();
-    window.ComicPanelFocus?.close({restoreFocus:false});
     clearPageTurn();
     const previousPage = current;
     const direction = number > (renderedPage || current) ? 'forward' : 'back';
@@ -4479,7 +4283,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     try { enabled = localStorage.getItem(storageKey) !== 'off'; } catch (_) {}
     function obstructed() {
       const active = document.activeElement;
-      return !enabled || document.hidden || pointers.size > 0 || window.ComicPanelFocus?.active
+      return !enabled || document.hidden || pointers.size > 0
         || !!document.querySelector('dialog[open],details.reader-tools[open]')
         || !image.getAttribute('src') || image.hidden || !$('page-loading').hidden || !$('page-error').hidden
         || $('page-caption').dataset.state !== 'ready' || panelLayer.getAttribute('aria-busy') === 'true'
@@ -4496,7 +4300,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     const finish = event => { pointers.delete(event.pointerId); wake(); };
     for (const name of ['pointerup','pointercancel','lostpointercapture']) document.addEventListener(name,finish,{capture:true,passive:true});
     for (const name of ['pointermove','keydown','focusin','focusout','wheel']) document.addEventListener(name,wake,{capture:true,passive:true});
-    for (const name of ['comic-page-navigation-start','comic-page-original-ready','comic-page-previews-ready','comic-panel-status','comic-panel-focus-change','visibilitychange']) document.addEventListener(name,wake);
+    for (const name of ['comic-page-navigation-start','comic-page-original-ready','comic-page-previews-ready','comic-panel-status','visibilitychange']) document.addEventListener(name,wake);
     for (const details of document.querySelectorAll('details.reader-tools')) details.addEventListener('toggle',wake);
     const observer = new MutationObserver(wake);
     for (const [element,attributes] of [[panelLayer,['aria-busy']],[$('page-caption'),['data-state']],[$('page-error'),['hidden']],[$('page-loading'),['hidden']]]) {
