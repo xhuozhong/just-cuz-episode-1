@@ -1,0 +1,1 @@
+/* Preview entries travel with their checked page configuration. */

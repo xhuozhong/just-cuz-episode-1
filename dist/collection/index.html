@@ -205,8 +205,6 @@
     original.removeEventListener('load', begin);
     removeEventListener('hashchange', turn);
     removeEventListener('pagehide', discard);
-    cancelFront('disposed');
-    document.removeEventListener('comic-page-light-ready',startFront);
     controller.abort();
     for (const item of transfers.values()) item.discard();
     transfers.clear();
@@ -225,138 +223,10 @@
     if (value.schemaVersion !== 1 || !Array.isArray(value.entries)) return null;
     const rows = Array.isArray(value.sourceMasks) ? value.sourceMasks : [];
     if (rows.length && rows.every(row => row.pageFile === source && sha(row.pageSHA256) && row.pageSHA256 === rows[0].pageSHA256)) pageHash = rows[0].pageSHA256;
-    return {bytes, rows, value};
+    return {bytes, rows};
   }).catch(() => null);
-
-  // Optional cold-phone front bootstrap. It owns one admitted <=64KiB group,
-  // never a whole preview pack, and never mounts or marks a native page ready.
-  const light = window.ComicReadingLight?.first;
-  const pageNumber = Number(source?.match(/page-(\d+)\.jpg$/)?.[1]);
-  let frontJob = null, attemptedFront = false;
-  const frontState = {state:'idle',limitBytes:65536,candidateDeclaredBytes:0,admittedDeclaredBytes:0,
-    observedBodyBytes:0,rangeRequests:0,maskRequests:0,verifiedFrames:0,taken:false};
-  const relative = value => typeof value === 'string' && !value.includes(String.fromCharCode(92)) && !/[:?#%]/.test(value) && Array.from(value).every(char=>char.charCodeAt(0)>32&&char.charCodeAt(0)!==127)
-    && value.split('/').every(part => part && part !== '.' && part !== '..');
-  const samePage = () => !controller.signal.aborted && (!location.hash.match(/^#page=(\d+)$/)
-    || Number(location.hash.match(/^#page=(\d+)$/)[1]) === pageNumber);
-  function cancelFront(reason) {
-    if (!frontJob || frontJob.cancelled || frontJob.complete && (reason==='native-ready' || frontState.taken)) return;
-    frontJob.cancelled = true; clearTimeout(frontJob.timer); frontJob.controller.abort();
-    frontJob.frames=[];
-    for(const [name,item]of transfers)if(item.frontBootstrap)transfers.delete(name);
-    for (const image of frontJob.images) image.removeAttribute('src');
-    frontState.state = reason;
-  }
-  async function decoded(job, bytes, type, width, height) {
-    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) throw new Error('Bootstrap dimensions');
-    const image = new Image(), url = URL.createObjectURL(new Blob([bytes],{type})); job.images.add(image);
-    try {
-      image.src = url; await image.decode();
-      if (image.naturalWidth !== width || image.naturalHeight !== height || job.controller.signal.aborted || !samePage()) throw new Error('Bootstrap dimensions');
-    } finally { image.removeAttribute('src'); URL.revokeObjectURL(url); job.images.delete(image); }
-  }
-  async function bounded(job,url,length,expectedHash,range,total) {
-    const headers = range ? {Range:`bytes=${range[0]}-${range[1]}`} : undefined;
-    const response = await fetch(url,{signal:job.controller.signal,cache:'force-cache',mode:'cors',credentials:'omit',priority:'low',...(headers?{headers}:{})});
-    const reject = () => { try { if(response.body) void response.body.cancel().catch(()=>{}); } catch(_){} };
-    if (response.status !== (range?206:200) || range && response.headers.get('Content-Range') !== `bytes ${range[0]}-${range[1]}/${total}`
-      || response.headers.has('Content-Length') && Number(response.headers.get('Content-Length')) !== length || !response.body?.getReader) {
-      reject(); throw new Error('Bootstrap transport unsupported');
-    }
-    const reader=response.body.getReader(), bytes=new Uint8Array(length);let received=0,complete=false;
-    try {
-      for (;;) {
-        const part=await reader.read();
-        if (job.controller.signal.aborted || !samePage()) throw new Error('Bootstrap cancelled');
-        if (part.done) break;
-        frontState.observedBodyBytes += part.value.byteLength;
-        if (!(part.value instanceof Uint8Array) || received+part.value.byteLength>length) throw new Error('Bootstrap overflow');
-        bytes.set(part.value,received);received+=part.value.byteLength;
-      }
-      if(received!==length || expectedHash && await checksum(bytes)!==expectedHash) throw new Error('Bootstrap integrity');
-      complete=true;return bytes;
-    } finally {
-      if(!complete)try{void Promise.resolve(reader.cancel()).catch(()=>{});}catch(_){}
-      try{reader.releaseLock();}catch(_){}
-    }
-  }
-  async function startFront(event) {
-    if (attemptedFront || originalReady || !light || light.page!==pageNumber || light.source!==source || !sha(light.sha256)
-      || event.detail?.page!==pageNumber || event.detail?.sourcePageSha256!==light.sha256 || document.hidden || navigator.onLine===false || !samePage()) return;
-    attemptedFront=true;frontState.state='checking';
-    const ready=await packet, first=window.ComicEarlyPreview?.first;
-    if(!ready || !first || originalReady || !samePage()) {frontState.state='skipped';return;}
-    const matches=(ready.value.previewEntries||[]).filter(item=>item?.pack?.source===first.source && item.pack.sha256===first.sha256);
-    if(matches.length!==1) {frontState.state='invalid';return;}
-    const spec=matches[0],pack=spec.pack,parents=ready.value.entries.filter(item=>item.panelId===spec.panelId);
-    const equal=['sourcePageSha256','mediaSha256','videoSource','frameCount','sourceWidth','sourceHeight','duration'];
-    if(parents.length!==1 || spec.sourcePageSha256!==light.sha256 || !equal.every(key=>spec[key]===parents[0][key])
-      || !relative(pack.source) || !/^preview-packs\/.+\.orbf$/.test(pack.source) || !sha(pack.sha256) || !sha(spec.mediaSha256)
-      || !Number.isSafeInteger(spec.width) || !Number.isSafeInteger(spec.height) || spec.width<1 || spec.height<1 || Math.max(spec.width,spec.height)>480
-      || !Array.isArray(pack.indices) || ![24,32].includes(pack.indices.length) || pack.indices[0]!==0 || new Set(pack.indices).size!==pack.indices.length
-      || !Number.isSafeInteger(spec.frameCount) || spec.frameCount<1 || !pack.indices.every(index=>Number.isSafeInteger(index)&&index>=0&&index<spec.frameCount)
-      || !Array.isArray(spec.indices) || spec.indices.length!==pack.indices.length || !spec.indices.every((index,row)=>index===pack.indices[row])
-      || !Array.isArray(pack.frameBytes) || !Array.isArray(pack.frameSha256) || pack.frameBytes.length!==pack.indices.length || pack.frameSha256.length!==pack.indices.length
-      || !Number.isSafeInteger(pack.byteLength) || !pack.frameBytes.every(n=>Number.isSafeInteger(n)&&n>=12&&n<=0xffffffff) || !pack.frameSha256.every(sha)
-      || pack.frameBytes.reduce((sum,n)=>sum+n,12+pack.indices.length*8)!==pack.byteLength) {frontState.state='invalid';return;}
-    const masks=new Map();
-    for(const row of ready.rows) {
-      if(row.pageFile!==source || row.pageSHA256!==light.sha256 || !/^[a-zA-Z0-9-]+\.png$/.test(row.maskFile)
-        || !sha(row.maskSHA256) || !Number.isSafeInteger(row.maskBytes) || row.maskBytes<1 || row.maskBytes>65536
-        || masks.has(row.maskFile) && masks.get(row.maskFile).maskSHA256!==row.maskSHA256) {frontState.state='invalid';return;}
-      masks.set(row.maskFile,row);
-    }
-    const selected=[0,pack.indices.indexOf(Math.min(...pack.indices.filter(index=>index>0))),pack.indices.indexOf(Math.max(...pack.indices))], declared=selected.reduce((sum,row)=>sum+pack.frameBytes[row],0)+[...masks.values()].reduce((sum,row)=>sum+row.maskBytes,0);
-    frontState.candidateDeclaredBytes=declared;
-    if(masks.size>8 || declared>65536) {frontState.state='skipped-budget';return;}
-    const job={controller:new AbortController(),images:new Set(),complete:false,cancelled:false,frames:[],spec};frontJob=job;
-    frontState.admittedDeclaredBytes=declared;frontState.nativeIndices=Object.freeze(selected.map(row=>pack.indices[row]));frontState.state='loading';
-    job.timer=setTimeout(()=>cancelFront('timeout'),1800);
-    const stop=()=>cancelFront('cancelled');controller.signal.addEventListener('abort',stop,{once:true});
-    try {
-      const offset=12+pack.indices.length*8;
-      const pinned=pack.source==='preview-packs/page-043-panel-01-q286-ca4687e4af02/000.orbf' && pack.sha256==='b471c371e8750ef5bd632b9dfbed28c4b64512b09a10257090775b5583722d28';
-      const url=(pinned?'https://xhuozhong.github.io/just-cuz-orbit-assets/p043-q286/':'')+pack.source+'?sha256='+pack.sha256;
-      frontState.rangeRequests=3;frontState.maskRequests=masks.size;
-      const maskRows=[...masks.values()];
-      const results=await Promise.all([
-        ...selected.map(row=>{const start=offset+pack.frameBytes.slice(0,row).reduce((sum,n)=>sum+n,0);return bounded(job,url,pack.frameBytes[row],pack.frameSha256[row],[start,start+pack.frameBytes[row]-1],pack.byteLength);}),
-        ...maskRows.map(row=>bounded(job,'source-mask-assets/'+row.maskFile+'?sha256='+row.maskSHA256,row.maskBytes,row.maskSHA256))]);
-      const payloads=results.slice(0,3),maskBytes=results.slice(3);
-      for(let i=0;i<selected.length;i++) {
-        const row=selected[i],bytes=payloads[i];
-        if(await checksum(bytes)!==pack.frameSha256[row]) throw new Error('Bootstrap frame integrity');
-        await decoded(job,bytes,'image/webp',spec.width,spec.height);
-        job.frames.push([pack.indices[row],new Blob([bytes],{type:'image/webp'})]);
-      }
-      for(let i=0;i<maskRows.length;i++)await decoded(job,maskBytes[i],'image/png',maskRows[i].bounds.width,maskRows[i].bounds.height);
-      if(job.controller.signal.aborted || originalReady || !samePage())throw new Error('Bootstrap stale');
-      for(let i=0;i<maskRows.length;i++) {
-        const row=maskRows[i],response=Promise.resolve(new Response(maskBytes[i],{status:200,headers:{'Content-Type':'image/png'}}));
-        transfers.set(row.maskFile,{hash:row.maskSHA256,response,frontBootstrap:true,discard(){},take(){return response;}});
-      }
-      job.complete=true;frontState.verifiedFrames=job.frames.length;frontState.state='complete';
-    } catch(_) {if(!job.cancelled){frontState.state='failed';job.controller.abort();}job.frames=[];}
-    finally{clearTimeout(job.timer);controller.signal.removeEventListener('abort',stop);}
-  }
-  document.addEventListener('comic-page-light-ready',startFront);
-  document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelFront('hidden');});
-  addEventListener('offline',()=>cancelFront('offline'),{once:true});
-  window.ComicEarlyFront=Object.freeze({
-    take(spec) {
-      const job=frontJob,pack=spec?.pack;
-      if(!originalReady || !job?.complete || job.cancelled || frontState.taken || document.hidden || navigator.onLine===false || !samePage() || !pack
-        || spec.sourcePageSha256!==light.sha256 || spec.mediaSha256!==job.spec.mediaSha256 || spec.width!==job.spec.width || spec.height!==job.spec.height
-        || ['videoSource','frameCount','sourceWidth','sourceHeight','duration'].some(key=>spec[key]!==job.spec[key])
-        || pack.source!==job.spec.pack.source || pack.sha256!==job.spec.pack.sha256 || pack.byteLength!==job.spec.pack.byteLength || pack.indices.length!==job.spec.pack.indices.length
-        || pack.indices.some((index,row)=>index!==job.spec.pack.indices[row] || pack.frameBytes[row]!==job.spec.pack.frameBytes[row] || pack.frameSha256[row]!==job.spec.pack.frameSha256[row]))return null;
-      frontState.taken=true;const frames=job.frames;job.frames=[];return frames;
-    },
-    get state(){return Object.freeze({...frontState});}
-  });
-
   async function begin() {
-    originalReady = true; cancelFront('native-ready');
+    originalReady = true;
     const ready = await packet;
     if (!ready || controller.signal.aborted || !pageHash) return;
     const masks = new Map();
@@ -369,7 +239,6 @@
     }
     if (masks.size > 8 || [...masks.values()].reduce((sum, row) => sum + row.maskBytes, 0) > 65536) return;
     for (const row of masks.values()) {
-      if (transfers.has(row.maskFile)) continue;
       const abort = new AbortController();
       const stop = () => abort.abort();
       controller.signal.addEventListener('abort', stop, {once:true});
@@ -416,7 +285,7 @@
       if (!page) return;
       const first = 'page-001-panel-01-lite21-f11947a00e5a0054:f11947a00e5a0054ca164ed58e83dc02c83bb9b9b5e5d23228277f5322962680,page-002-panel-01-lite21-207a894865cf0cae:207a894865cf0caec3a32fd2c7724e06789000c5d2432dbea0f1d0e6a42b99c9,page-003-panel-01-lite21-dd820bff972b457a:dd820bff972b457a1c07efc62e6a2ae4f2187ef0da5a71abbda1e96ed4ba0a35,page-004-panel-01-lite21-14ed8293a0be06fa:14ed8293a0be06fa4d8288fe5c34e73bed219f919c67cebb861e7137e86275ca,page-005-panel-01-lite21-8ad7dad489849312:8ad7dad489849312f19e2375e231c81dfe27d2e5715101444c966a12099bfe86,page-006-panel-01-lite21-cacd7d06cb288dd2:cacd7d06cb288dd27ed743d7d2e781eaf02f89d68dfaa7c9d845e5f508570be4,page-007-panel-01-lite21-8ca64575e133c9f2:8ca64575e133c9f216913fc008f4a1a2a7a0cadbd8f8ca6e66dd43dedaaef725,page-008-panel-01-lite21-631dfdef9792d970:631dfdef9792d9704353bc4797085c62653bc48797e79cde313e5482b28c53b3,page-009-panel-01-lite21-7ee3b0e4bf4dddf5:7ee3b0e4bf4dddf552a5aee5086f49f4866d0cc62178d292d81729dc69e11e8b,page-010-panel-01-lite21-0e08477e193a9894:0e08477e193a9894be21a1b83e443c41b9a2d7dc29b3c745fdf61feaa3e26002,page-011-panel-01-closer-2cb66d7e4e7f/000:ef0e9e4545f00dfb24933edd3f6afa25ec126238c989f39ab9d5100415dc7fd6,page-012-panel-01-lite21-783cdb9eab222be5:783cdb9eab222be5f704bafabc1afc1cba820ea9f5d59dd9a50fb42ec024186f,page-013-panel-01-lite21-8a46739072cc3a3f:8a46739072cc3a3fdd86ae41a0ceaed1bfd89c04a719aaf37c002536b22a5521,page-014-panel-01-gasp-lite21-6ab373ee1232175e:6ab373ee1232175e237e097e6ada0f115d0ef003d5e907c8eae4d2065022a819,page-009-panel-01-lite21-7ee3b0e4bf4dddf5:7ee3b0e4bf4dddf552a5aee5086f49f4866d0cc62178d292d81729dc69e11e8b,page-016-panel-01-lite21-17656f38c25489c6:17656f38c25489c6f9cf02003adf36527a64e52508274359bc2ca72edb4c9537,page-017-panel-01-lite21-d84f41c29f9d9b3e:d84f41c29f9d9b3e3459f536e8b34037cdefb5ba2e739daecae747ad30a421dd,page-018-panel-01-lite21-6983d3844e26c78f:6983d3844e26c78ff8fabb37fc763d0fff4d0580018f53c9b8ef0f2e559d0845,page-019-panel-01-lite21-2dbc3f26a983761a:2dbc3f26a983761a84ee31d33614de21a64275165a4ffd8301203625ae1f30d2,page-020-panel-01-lite21-2383953d06cea8f2:2383953d06cea8f222bc295850714ef0780d3af6b005f9081e9a89c27fec0bc4,page-021-panel-01-lite21-f86d4fb93011a81b:f86d4fb93011a81b8fbe5aa311ab014e24f2ea11c87b16b9475cfb18686991b3,page-022-panel-01-lite21-fd6ba614e79247a3:fd6ba614e79247a3029bf3aa56f9a5dfff7f8a8abce03e9044b5d7163a97e5f3,page-023-panel-01-lite21-7dbb66ff45d30efe:7dbb66ff45d30efe007260896f9b672d8c4571337841b60e3dee624c05178ecb,page-024-q205-083d0a1df036/000:1570c179b2fd753cff031f5376448d724065080eb6e2f6c564b210ce38f277f2,page-025-panel-01-lite21-4193298d76eeadb4:4193298d76eeadb46b6e27e81e6c19b25c9b2eeae2cb1914a15e3f1ba628e453,page-026-panel-01-lite21-0437f9aabd720206:0437f9aabd7202069f67b3966ba9e6be9822ea9f1fe068202a4dda2b48372e81,,,page-029-panel-01-lite21-d854cc65a58f05c1:d854cc65a58f05c130e5a8f1590b438d8e8cb5d09d60e6030923f41baaa969aa,page-030-panel-01-cd10c55695d5-coverage24/000:85663b8bf38c27b4f26de67965e0648290210fe0f86795f8d397f96a7ad8c79e,page-031-panel-01-68d586e2cb06-coverage24/000:b25d50ccc6efc9b06dc5f6b56ed0101952ed387e6734be863c5df52ca374b592,page-032-panel-01-lite21-052fdae259bc3083:052fdae259bc3083a73f4ac3d01a61b395c3237304eba444982d08bcbd7bfbc9,page-033-wan-q138-q90-uniform24-8e340c3c23cf/000:38ee764a8fd32c821596c4cb4e7a2ce2093a552f593d8b02b115760bd8e91b9e,page-034-panel-01-lite21-0cae9663927c678d:0cae9663927c678d59bf625ac072588d8092f9b5234ed39286ec8bd942dcafa3,page-035-panel-01-lite21-48e19fae63ddd014:48e19fae63ddd014b9dac75821af7613c5cbdf6b52a877a70592a1b19862560a,page-036-panel-01-lite21-4836f35c15214741:4836f35c15214741616fc4e0564d1d38d71d3a3a86fad9b14917074c0eb533b8,page-037-h3-139-q77-256-q84-2e271429f702/000:2e271429f7023958e585bf7a469b284b1d74dc887fc735f9da1a62c76ecc5b21,page-038-panel-01-d5897d8ea58c-coverage24/000:534ed202df109756f75cde266368194555deb2e94dea4ecfb5a256236cc57021,page-039-panel-01-q277-2414dfe031f8/000:d6d19809c88eb2742803358b47d0ff147be691fc09bf5a15a06d85e09f288490,page-040-panel-01-lite21-440e3cd9a5933eb1:440e3cd9a5933eb123bda47c7e4c9b29807d6113ebc9a58cb3b3d1d49ecfc90e,page-041-panel-01-lite21-759d047b20ca6208:759d047b20ca6208dae7bd1869c4eff86c5b965b5e4b2c888e72edf71b9d23d8,page-042-panel-01-lite21-a898b45a97bd4bf4:a898b45a97bd4bf43f4678b1a52716af9784980a2344b0798e2f262f473eb728,page-043-panel-01-q286-ca4687e4af02/000:b471c371e8750ef5bd632b9dfbed28c4b64512b09a10257090775b5583722d28,page-044-panel-01-lite21-e3345431d97dcdfb:e3345431d97dcdfb41c986383fc7d075c568846986a3eb179155571de978a6a5,page-045-panel-01-lite21-dac9cdd7e6d88e30:dac9cdd7e6d88e30ceed98f1da377c8ae23a1cf098c1f9650b67bf715ae65542,page-046-panel-01-lite21-d4db5ab5a9732811:d4db5ab5a97328116cd45bb01ef2dd447ec51f3412f5d2b424564783cf2a0f07,page-042-panel-01-lite21-a898b45a97bd4bf4:a898b45a97bd4bf43f4678b1a52716af9784980a2344b0798e2f262f473eb728,page-048-panel-01-60cb9cb298e7-coverage24/000:de3bfc5845b5e5ed5156df55a203eba56f6094d629428164a4de3e3d256d43a2,page-049-panel-01-lite21-3dd6aeac72f34d30:3dd6aeac72f34d30de934f7d6e7b8509ffa82959864c8d099c3612f95f2fef83,page-050-panel-01-lite21-0c65fbee31cf3132:0c65fbee31cf3132a358cbce834cc3fb1a4790507c5af28f920584b1eea7f0c0,page-051-panel-01-lite21-e846c9723cd0d278:e846c9723cd0d278c553c5e19c168953e7fd8576024d49e433c60ef6e4c4eb08,page-052-panel-01-lite21-3d636df51546aba5:3d636df51546aba59ae4c6890ea440946dc8b7d78e66048936b08e3d0fad951d,page-053-panel-01-ef3a94c66605-coverage24/000:5262fb8c04327861e92531b32826989f3b667308a07265f8e29a4065f8d796e0,page-054-panel-01-7785cb9ad4bf-coverage24/000:e6a33c059c1ef049b7c5f961eeb8be8100f8b02f3bee37ee054ca8c04c1d51dd,page-055-panel-01-lite21-2e210db66b320b9f:2e210db66b320b9f184738b763ebbf6e8c84019fbef4d5e72969b69ef6b1d427,page-056-panel-01-c1e8fa076608-coverage24/000:e337543286299ac7026441ab9249ee0c3116482d42c706e8de3f41edaea02e91,page-057-panel-01-lite21-de3597c54475c683:de3597c54475c6834dfea5972a680a1c0876cade8db30e90dfd5456dfcdc9eb1,page-058-panel-01-lite21-2f3059ac14dda8f1:2f3059ac14dda8f12ba7d3f47f8e98d5e94501e8cc250f92962f5e8ed2680e70,page-059-panel-01-d0a71d178493-coverage24/000:cbcc5cfb6cf14c381c92d9b6394bfcc8a2b64c2cda1a7d9de234dde95b08772f,page-060-panel-01-lite21-91d17604ee6a5e42:91d17604ee6a5e4273fa448a7fa0c9acd875a95abdbab3dcd4449f2e7767617a,page-061-panel-01-74062a337525-coverage24/000:d4a1fa710468656fae083160fd22765ac2f66a8c6ace36a06d8d63e4840c2dec,page-062-panel-02-fc75089ebb95-coverage24/000:5eacf0c09c3085529f664ba2bc342c106f3156bf7cbbb3f2be3c7d7a86a8b07f,,,page-065-panel-01-lite21-d9c7a509bc7b2a63:d9c7a509bc7b2a63ee4bd5ce4d07beff10e98c9cfb95db6bd38e19d20e1c98a0,page-066-panel-01-lite21-90b6cfec6f45e912:90b6cfec6f45e912198578ccde9057d1553d9afbf0757780846cbae44a60f582,,page-068-panel-01-06e181813ec7/000:41b7f1647aa10affed3f28ea52a5e01be99b5ed32ceef477535e8747c2447087,page-069-panel-01-34828e1e841e-coverage24/000:d19d0782ba5b18140151394b8cd6ec593f5620ac3d3fec55456b07637f2ae3c6,page-070-panel-01-19f766a18fe7-coverage24/000:498e1443d298f760e48ef54719e1b47b5dedf5e2d4dee4ddbee72bd412212f26,page-071-panel-01-draft-gasp-6d8be8aaebe2-coverage24/000:c6367e300acea7cbc431418cd23b02d53c5312f424acb7d10b5b56a018e75a51,page-066-panel-01-lite21-90b6cfec6f45e912:90b6cfec6f45e912198578ccde9057d1553d9afbf0757780846cbae44a60f582,page-073-panel-01-lite21-1b4c1f05e77a66d1:1b4c1f05e77a66d1baf55eba2165de2654f5a2bfb1d952e7018fa2a5ba763708,page-074-panel-01-lite21-e6995a0edaa3a69d:e6995a0edaa3a69d1e1133870506d29dfc425bfb4ee7ee4ef7bfafb1ae92068d,page-075-panel-01-draft-075-gasp-4d388732ad82-coverage24/000:32170e710c711c461a4c4a66a143a1f71527007cda054af533f38721c7a15aef,page-076-panel-01-lite21-9ab15151e9f85ec0:9ab15151e9f85ec045dfae0eba5598bcff591ef21ab494648e5f679835c60f5d,page-077-panel-01-lite21-21a414471e7cb3f3:21a414471e7cb3f3672d21792f11d9d2ba9c7cc1f5f0984d572c51902c12c175,page-078-panel-01-lite21-c22d46d3d913cea1:c22d46d3d913cea11b9eeaa8533ded72f0dc95ded52784b4324f16a47ce92f80,page-079-panel-01-4f3b432e0006-coverage24/000:f2993abad24edd1ceec8c6a3192b8356bceec0e9fb41e6067d1c4a178223d65a,page-080-panel-01-152793fed477/000:8ff15999aebccfb091ab2dbda23795383e693492c0e28c88e22afe413b693fba,page-081-panel-01-lite21-471a61f3043c0047:471a61f3043c00473218959f7172903dcfc8f2ccb14f46f31ccaacc207f9e833,page-082-panel-01-f45d95885f15-coverage24/000:0dd731b9da508af5f646eeb642e41eaee7116bded6b4ecade0d66b049e52aa1c,page-083-panel-01-lite21-e695f6dcfdc68b19:e695f6dcfdc68b191746324e09a62ab7fcc557a4cd824ce6614b4df148005efe,page-084-panel-01-075ac4a53365-coverage24/000:ec65dceae2209816c5bff260521e4801629119181a84c0275a917b71aa288fec,page-085-panel-01-4006375e2430-coverage24/000:ea2a3dac80a938c85a860c8671a3fd61a93e0e654b5e39d2b1fac96d3c1ed313'.split(',')[page - 1];
       const second = {"14":["preview-packs/page-014-panel-01-stomp-q248-31e3d4c571f2/000.orbf","31e3d4c571f2874981ec707521a4490b29c5cb2b4e34ee0c8304c7f16cd8327c",true]}[page];
-      const transfers = new Map(); let firstSpec = null;
+      const transfers = new Map();
 
       function prepare(source, hash, afterOriginal) {
         const controller = new AbortController();
@@ -461,18 +330,16 @@
 
       if (first) {
         const [name, hash] = first.split(':');
-        firstSpec = Object.freeze({source:'preview-packs/' + name + '.orbf',sha256:hash});
-        prepare(firstSpec.source, hash, true);
+        prepare('preview-packs/' + name + '.orbf', hash, true);
       }
       if (second) prepare(second[0], second[1], second[2]);
       if (transfers.size) window.ComicEarlyPreview = {
-        take(path, sha, signal) { return transfers.get(path)?.take(sha, signal) ?? null; },
-        get first() { return firstSpec; }
+        take(path, sha, signal) { return transfers.get(path)?.take(sha, signal) ?? null; }
       };
     })();
   </script>
   <link rel="stylesheet" href="reader-styles-7bb8a4d8661e.css">
-  <script defer src="reader.js?v=q299-cc89e63bbf9f"></script>
+  <script defer src="reader.js?v=q300-c0bf705e0037"></script>
   <script defer src="phone-orbit.js?v=8786f52f42c1"></script>
   <script id="page-model-loader">
 (() => {
@@ -612,7 +479,7 @@
     <header class="book-header">
       <div class="brand-lockup">
         <img class="book-mark" src="ui-assets/just-cuz-brand-mark.webp" width="144" height="144" alt="" decoding="async">
-        <img class="book-logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='213' viewBox='0 0 640 213'%3E%3Ctext x='320' y='140' text-anchor='middle' font-family='Arial,sans-serif' font-weight='bold' font-size='92' fill='%23312923'%3EJUST CUZ%3C/text%3E%3C/svg%3E" data-reader-deferred-logo="ui-assets/just-cuz-title-640-v4.webp" width="640" height="213" alt="JUST CUZ" decoding="async" fetchpriority="low">
+        <img class="book-logo" src="ui-assets/just-cuz-title-640-ecb01ef92351.webp" width="640" height="213" alt="JUST CUZ" decoding="async" fetchpriority="low">
         <div class="book-title"><p class="eyebrow">翻开今天的小故事</p><h1>会转动的故事书</h1></div>
       </div>
       <div class="header-corner">
@@ -737,34 +604,6 @@
     </div>
   </dialog>
   <noscript>请允许浏览器运行脚本以使用分页导航。85 张完整原图也保存在 pages 文件夹中。</noscript>
-
-<script id="reader-wordmark-late-load">
-(() => {
-  const image=document.querySelector('.book-logo[data-reader-deferred-logo]');
-  if(!image)return;
-  const fallback=image.getAttribute('src'),deadline=performance.now()+6000;let released=false,native=false,timer;
-  function release(reason) {
-    if(released || document.hidden)return;
-    released=true;clearTimeout(timer);
-    document.removeEventListener('comic-page-original-ready',nativeReady);
-    document.removeEventListener('comic-panel-status',panelReady);
-    image.dataset.readerLogoReason=reason;
-    image.addEventListener('error',()=>{image.src=fallback;image.dataset.readerLogoState='fallback';},{once:true});
-    image.addEventListener('load',()=>{if(image.getAttribute('src')!==fallback)image.dataset.readerLogoState='loaded';},{once:true});
-    image.dataset.readerLogoState='loading';image.src=image.dataset.readerDeferredLogo;
-  }
-  function nativeReady(){native=true;panelReady();}
-  function panelReady(){
-    if(native && [...document.querySelectorAll('#panel-layer .panel-host:not([data-background-only="true"])')]
-      .some(host=>host.dataset.interactionState==='ready'&&host.dataset.loadingFailed!=='true'))release('native-and-panel-ready');
-  }
-  document.addEventListener('comic-page-original-ready',nativeReady);
-  document.addEventListener('comic-panel-status',panelReady);
-  timer=setTimeout(()=>release('bounded-fallback'),6000);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden && !released){panelReady();if(performance.now()>=deadline)release('visible-fallback');}});
-  addEventListener('pagehide',()=>{released=true;clearTimeout(timer);},{once:true});
-})();
-</script>
 <script id="first-original-paint">
 (() => {
   'use strict';

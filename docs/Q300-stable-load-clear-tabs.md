@@ -1,0 +1,11 @@
+# Stable loading and compact paper hints
+
+Loading hints now sit at measured panel edges, use short labels in all six languages, and disappear after the first real drag. Reviewed foreground exclusions on pages 11, 13 and 14 supplement caption avoidance. Percentage changes within the same digit-width bucket no longer repeat layout measurement or unchanged style writes. Accessible full instructions remain available.
+
+The direct 640×213 title WebP is 22,380 bytes instead of 44,294 bytes (49.47% smaller), with identical alpha and unchanged dimensions. Original title and all accepted comic artwork, masks, translation/font and orbit media are retained. Repeated canvas work is deduplicated while preserving cache/reset/recovery invalidation. Idle navigation stays legible, and language changes retain the old reading layer until the latest page/translation/font transaction is ready, with bounded pending and retry feedback.
+
+The preceding Q299 experiment was not accepted as a speed improvement: three actual-public cold samples per page showed page 43 first interaction regressing from a 4.694-second median to 7.277 seconds. Those samples and diagnostic attempts are retained. This revision returns to the established Q298b loading shell, removes optional speculative front-frame requests and SVG title deferral, and keeps the proven byte/layout savings. The exact cause of that earlier two-second stall was not established; removal is a conservative decision, not a causal finding. New actual-public three-round timing must be recorded after deployment before final acceptance.
+
+Local acceptance covers all 85 pages on desktop and simulated mobile, 135 paper geometry/state checks, percentage-layout invalidations, reading/preload boundaries, 15 language transactions, tools and pinch gestures. The initial language startup timeout and successful strict isolated rerun are retained. A recovered local page-38 transport failure is recorded rather than discarded. Unchanged recovery code inherits its exact-hash 25-case regression. This is not physical-phone gyroscope or every-HD-resource acceptance.
+
+No enlargement button is reintroduced. No new generation, CDN, login or paid service is required. The existing protected GitHub Pages deployment workflow is unchanged.

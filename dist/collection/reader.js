@@ -4595,6 +4595,8 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     }
     #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state]:not([hidden]) .panel-loading-number {
       display:block; flex:none; color:#624416; font-size:12px; line-height:1.1;
+      font-family:ui-monospace,Consolas,monospace; font-variant-numeric:tabular-nums;
+      inline-size:var(--paper-number-width, auto); text-align:right; white-space:nowrap;
     }
     #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state] .panel-loading-hint,
     #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state] .panel-loading-number[hidden] { display:none; }
@@ -4620,6 +4622,8 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   `;
   document.head.append(paperStyle);
   const panelKey = host => `${host.dataset.sourcePanelId}:${host.dataset.interactionRegion || ''}`;
+  const setData = (element,key,value) => { if (element.dataset[key] !== value) element.dataset[key] = value; };
+  const setStyle = (style,key,value) => { if (style.getPropertyValue(key) !== value) style.setProperty(key,value); };
   let queued = false, destroyed = false;
   function text(key, values = {}) {
     const selector = document.getElementById('reading-language');
@@ -4731,9 +4735,12 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   function layoutBadge(record,point,occupied) {
     if (record.badge.hidden) { record.layoutKey = ''; return; }
     const badge = record.badge, ready = badge.dataset.state === 'ready';
-    const key = [record.label.textContent,record.number.textContent,badge.dataset.state,point.region.x,point.region.y,point.region.width,point.region.height,...occupied.flatMap(box=>[box.x,box.y,box.width,box.height])].join('|');
+    // Numeric cells reserve real font-relative ch units. Digits within one width bucket cannot resize the tab.
+    const numberWidthBucket = record.number.textContent.replace(/[0-9]/g,'0');
+    const language = window.ComicLocaleUI?.language || document.documentElement.lang;
+    const key = [record.label.textContent,numberWidthBucket,badge.dataset.state,language,point.region.x,point.region.y,point.region.width,point.region.height,...occupied.flatMap(box=>[box.x,box.y,box.width,box.height])].join('|');
     if (record.layoutKey === key) { if (record.placed) occupied.push(record.placed); return; }
-    badge.dataset.symbolOnly = 'false';
+    setData(badge,'symbolOnly','false');
     // Measure the actual painted box, then remove the page's current zoom transform.
     const layerBox = layer.getBoundingClientRect();
     const zoomX = layerBox.width / layer.clientWidth || 1, zoomY = layerBox.height / layer.clientHeight || 1;
@@ -4742,7 +4749,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     let selected = placement(point,width,height,occupied);
     const tooLarge = width*height > point.region.width*point.region.height*.12 || height > point.region.height*.22 || badge.scrollWidth > width+1;
     if (ready && (!selected?.safe || tooLarge)) {
-      badge.dataset.symbolOnly = 'true';
+      setData(badge,'symbolOnly','true');
       [width,height] = measure();
       selected = placement(point,width,height,occupied);
       if (!selected?.safe) {
@@ -4751,13 +4758,13 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       }
     }
     if (!selected) selected = {x:point.region.x+2,y:point.region.y+2,width,height,safe:false};
-    badge.style.setProperty('--paper-x',`${selected.x}px`);
-    badge.style.setProperty('--paper-y',`${selected.y}px`);
-    badge.style.setProperty('--paper-transform','none');
-    badge.dataset.placement = selected.safe ? 'clear-edge' : 'least-overlap-edge';
-    badge.dataset.placementScope = selected.bookEdge ? 'book' : 'region';
-    badge.dataset.placementOverlap = JSON.stringify([selected.captionOverlap||0,selected.foregroundOverlap||0,selected.occupiedOverlap||0]);
-    badge.dataset.measuredWidth = String(width); badge.dataset.measuredHeight = String(height);
+    setStyle(badge.style,'--paper-x',`${selected.x}px`);
+    setStyle(badge.style,'--paper-y',`${selected.y}px`);
+    setStyle(badge.style,'--paper-transform','none');
+    setData(badge,'placement',selected.safe ? 'clear-edge' : 'least-overlap-edge');
+    setData(badge,'placementScope',selected.bookEdge ? 'book' : 'region');
+    setData(badge,'placementOverlap',JSON.stringify([selected.captionOverlap||0,selected.foregroundOverlap||0,selected.occupiedOverlap||0]));
+    setData(badge,'measuredWidth',String(width)); setData(badge,'measuredHeight',String(height));
     record.layoutKey = key; record.placed = selected; occupied.push(selected);
   }
   function videoFraction(video) {
@@ -4798,12 +4805,13 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     // Neither visible nor accessible text mixes quiet HD completion with preview preparation.
     const numberText = usable || state === 'error' ? '' : `${percent}%`;
     if (record.number.textContent !== numberText) record.number.textContent = numberText;
-    record.number.hidden = !numberText;
+    if (record.number.hidden !== !numberText) record.number.hidden = !numberText;
+    setStyle(record.number.style,'--paper-number-width',`${numberText.length}ch`);
     if (record.label.textContent !== label) record.label.textContent = label;
     if (record.hint.textContent !== (usable ? '' : hint)) record.hint.textContent = usable ? '' : hint;
     if (record.badge.dataset.state !== state) record.badge.dataset.state = state;
     if (record.badge.dataset.previewUsable !== String(previewReady)) record.badge.dataset.previewUsable = String(previewReady);
-    record.badge.dataset.preparationPhase = usable ? 'ready' : recovering ? 'retrying' : state === 'error' ? 'error' : previewPhase ? 'preview' : 'media';
+    setData(record.badge,'preparationPhase',usable ? 'ready' : recovering ? 'retrying' : state === 'error' ? 'error' : previewPhase ? 'preview' : 'media');
     if (record.badge.getAttribute('aria-label') !== description) record.badge.setAttribute('aria-label', description);
     if (record.badge.title !== description) record.badge.title = description;
     const hidden = usable && (gyroReady || draggedPanels.has(panelKey(host)));
@@ -4852,13 +4860,13 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
         layer.append(badge);
       }
       const style = record.badge.style;
-      style.setProperty('--badge-center-x', point.left);
-      style.setProperty('--badge-center-y', point.top);
-      style.setProperty('--badge-width', point.width);
-      style.setProperty('--badge-right', point.right);
-      style.setProperty('--badge-bottom', point.bottom);
-      record.badge.dataset.compact = String(point.compact);
-      record.badge.dataset.tiny = String(point.tiny);
+      setStyle(style,'--badge-center-x', point.left);
+      setStyle(style,'--badge-center-y', point.top);
+      setStyle(style,'--badge-width', point.width);
+      setStyle(style,'--badge-right', point.right);
+      setStyle(style,'--badge-bottom', point.bottom);
+      setData(record.badge,'compact',String(point.compact));
+      setData(record.badge,'tiny',String(point.tiny));
       update(host, record);
       layoutBadge(record,point,occupied);
     }
