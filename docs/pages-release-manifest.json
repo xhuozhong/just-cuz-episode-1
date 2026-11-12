@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "reviewedParent": "2ac920e913f6d7222716cd091c53a50ee87413ce",
-  "candidate": "Q300-stable-load-clear-tabs",
+  "reviewedParent": "8fe9beb50e230b402852b0b651e9c1fcf2fd4eec",
+  "candidate": "Q302-reading-reliability",
   "maxSiteBytes": 1000000000,
   "files": {
     ".nojekyll": {
@@ -9,8 +9,8 @@
       "bytes": 0
     },
     "collection-release.json": {
-      "bytes": 5156,
-      "sha256": "fe9c4ffec0f70e37a1d066c8937650c37bf0a96bfc5e1865678e71ea9c67f290"
+      "bytes": 5233,
+      "sha256": "7f1a79b013821ad1cfca7510871de3bbdc5faddc94a870ac390a132bbd7df800"
     },
     "collection/ORBIT_VIEWER_LICENSE.txt": {
       "sha256": "077709d959a8a62249523349767edd072cfe6e6ba1b1854beeb95f83a95aec06",
@@ -1829,8 +1829,8 @@
       "bytes": 1036182
     },
     "collection/index.html": {
-      "bytes": 77845,
-      "sha256": "ab7dd91a47586d1fb5b849e7c0b6285c44157bbc5cdd0aab877d0809b389ba16"
+      "bytes": 82926,
+      "sha256": "584ee5490914f2268a12f8c202abaf0174061e9bf56d9c8b8b8936b06565def5"
     },
     "collection/loading-preview.css": {
       "bytes": 5394,
@@ -1841,8 +1841,8 @@
       "bytes": 532
     },
     "collection/manifest.json": {
-      "bytes": 798632,
-      "sha256": "c99dc67cbd3afde437aa66733c959b505cf2dd3d7de9c14ab23a5d6027933622"
+      "bytes": 800230,
+      "sha256": "ba48d70b9fc009e054a70a4fcc7d9a592bfd6a1832fbab1270d628120941d775"
     },
     "collection/pages/page-001.jpg": {
       "sha256": "3d83cbd23b6ebc001129955b97b8bfcd6756fed32642c58a55b5c31cc33905a9",
@@ -3561,8 +3561,8 @@
       "bytes": 125037
     },
     "collection/reader.js": {
-      "bytes": 554848,
-      "sha256": "c0bf705e0037cf7e85c678dc47810e3a2020caf56ee716ae1a4ba11803911a9e"
+      "bytes": 561406,
+      "sha256": "18b9c5faed743bb66a6181ea914297f620e1054ed5eb31e24bb08e8d1a1a0551"
     },
     "collection/responsive-chrome.css": {
       "bytes": 13362,
@@ -6447,6 +6447,38 @@
     "collection/ui-assets/just-cuz-title-640-ecb01ef92351.webp": {
       "bytes": 22380,
       "sha256": "ecb01ef923511e9134a71c462609f180e1e1bd63ec600ecf29fbd7499bb9316f"
+    },
+    "collection/book-models/page-082-7de34b9bc312.json": {
+      "bytes": 13491,
+      "sha256": "7de34b9bc3125e983ac78265229f9f0bc018199a0ac6095834cc6e9e6dc688a0"
+    },
+    "collection/frame-config/page-082-c13ab9c91c1c.json": {
+      "bytes": 46759,
+      "sha256": "c13ab9c91c1ccc0fbdd3d850139afaf56e24e69eb96e58add06005a8e4ccae78"
+    },
+    "collection/lettering/page-082-97a025dc8cfe.json": {
+      "bytes": 2374,
+      "sha256": "97a025dc8cfee53e5940a666e6d964f4809883c257c992b774d74e06bdff7085"
+    },
+    "collection/publication/p082-q302-original-english-3a7b2e48361d.png": {
+      "bytes": 121325,
+      "sha256": "3a7b2e48361db9c583518c7f691b552a0dd596738d7b6d5f213cceb9a8177485"
+    },
+    "collection/publication/p082-q302-protection-79fc6f3da0eb.png": {
+      "bytes": 105197,
+      "sha256": "79fc6f3da0eb1216b8a515199af9d4b8722971c6ac0f9556866deeb4680471b1"
+    },
+    "collection/source-fit-assets/p082-text-01-q302-glyph-only.png": {
+      "bytes": 90279,
+      "sha256": "376ddd8744ea35197a6e5ce73893747c30a97a07e06bb92620afbc4a079d40b5"
+    },
+    "collection/source-mask-assets/mask-0ef1189bf6d1092cfa77.png": {
+      "bytes": 3061,
+      "sha256": "0ef1189bf6d1092cfa7738d36f94e19a529b269127866be5a912b7213e8b34ba"
+    },
+    "collection/source-mask-assets/mask-baf83dd48fe83da49af9.png": {
+      "bytes": 2087,
+      "sha256": "baf83dd48fe83da49af9bd7c29cd2a9f4a533cc99555bb2088db77d52ee5971e"
     }
   },
   "assetBase": "https://xhuozhong.github.io/just-cuz-orbit-assets/",

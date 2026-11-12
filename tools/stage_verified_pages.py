@@ -48,7 +48,7 @@ def main():
     args = parser.parse_args()
     spec_raw = (REPO / 'docs/pages-release-manifest.json').read_bytes()
     spec = json.loads(spec_raw)
-    assert spec['schemaVersion'] == 1 and spec['candidate'] == 'Q300-stable-load-clear-tabs'
+    assert spec['schemaVersion'] == 1 and spec['candidate'] == 'Q302-reading-reliability'
     source = args.source.resolve(strict=True)
     records = spec['files']
     assert records and sum(row['bytes'] for row in records.values()) < spec['maxSiteBytes'] == 1_000_000_000
