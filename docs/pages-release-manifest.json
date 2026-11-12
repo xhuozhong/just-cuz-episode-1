@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "reviewedParent": "d1fde484ad2b13c8e75f23d81de04e0964a4a4f3",
-  "candidate": "Q298-progressive-reading",
+  "reviewedParent": "d96bcae7a66fcd7aa9081f2aecbfa44ad4056592",
+  "candidate": "Q298b-progressive-reading",
   "maxSiteBytes": 1000000000,
   "files": {
     ".nojekyll": {
@@ -9,8 +9,8 @@
       "bytes": 0
     },
     "collection-release.json": {
-      "bytes": 5020,
-      "sha256": "d107250bd588c3f05f815cd8919909bea4fe60ab4185bb0dbc66d6e814367f08"
+      "bytes": 5021,
+      "sha256": "be11f55b156897708785d7fd8341b8fa160b469c977b30772ccad87e70648ef0"
     },
     "collection/ORBIT_VIEWER_LICENSE.txt": {
       "sha256": "077709d959a8a62249523349767edd072cfe6e6ba1b1854beeb95f83a95aec06",
@@ -1829,8 +1829,8 @@
       "bytes": 1036182
     },
     "collection/index.html": {
-      "bytes": 76614,
-      "sha256": "ae4f2e8445504561830662d652ce5c74ee8a2b7eb313d26cd46c337c0255fa4f"
+      "bytes": 77658,
+      "sha256": "6f6bf5a0c1fcce80071e7c3a4535e125ca0c519cccaac9588ddacb87fca01b60"
     },
     "collection/loading-preview.css": {
       "bytes": 5394,
@@ -6473,10 +6473,10 @@
     }
   },
   "readingPreviewPackage": {
-    "assetCommit": "c55ec4ca7164eb9f5d75684b8fb7a75f59d293d3",
-    "runID": 43241823433,
-    "manifestSHA256": "ce8a5b89cdcf409b5e85f4b9177221a9a062f53c309be7e74646fc1e637d596b",
-    "assetBase": "https://xhuozhong.github.io/just-cuz-orbit-assets/reading/q298/",
+    "assetCommit": "341a83b727283e768e620503e14dbf697480ecf4",
+    "runID": 43250355317,
+    "manifestSHA256": "f5e61de1fc37a0ab5bfc57943677db057ba9180117a8ff1cfb80ffa48d7f04de",
+    "assetBase": "https://xhuozhong.github.io/just-cuz-orbit-assets/reading/q298b/",
     "sourcePages": 85
   }
 }

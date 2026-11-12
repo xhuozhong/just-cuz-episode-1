@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#fff8e7">
+  <title>Just Cuz · 会转动的故事书</title>
+  <script id="current-original-preload">
+    (() => {
+      'use strict';
+      try {
+        if (document.getElementById('current-page-original-preload')) return;
+        let first = 1;
+        const match = location.hash.match(/^#page=(\d+)$/);
+        if (match) first = Number(match[1]);
+        else {
+          try {
+            const saved = localStorage.getItem('just-cuz-collection-source-order-v1-page');
+            first = saved !== null ? Number(saved) || 1 : 1;
+          } catch (_) {}
+        }
+        // Mirror app.js startup clamp and showPage truncation. This edition has 85 original pages.
+        const page = Math.trunc(Math.min(85, Math.max(1, first)));
+        if (!Number.isFinite(page) || page < 1 || page > 85) return;
+        const link = document.createElement('link');
+        link.id = 'current-page-original-preload';
+        link.rel = 'preload'; link.as = 'image'; link.type = 'image/jpeg';
+        link.fetchPriority = 'high';
+        const canonical = 'pages/page-' + String(page).padStart(3, '0') + '.jpg';
+        const routes = {"pages/page-038.jpg":["720078cba7982a2e6bcaba5bd9acd976649feea7a70ea59124c418fd409a87d7","artwork-fast/28353a71cbd1/pages/page-038.jpg"],"pages/page-039.jpg":["dea7d74f84665d733b19e61f75766a9d253f290a373d32f2d6b7e0e2a30db9d4","artwork-fast/fed97684d6eb/pages/page-039.jpg"],"pages/page-040.jpg":["4b8f3158e2981a78a296406c692fcbb2b2c7550470fabf5c4b780663ec54a786","artwork-fast/7a68ce6a9030/pages/page-040.jpg"],"pages/page-043.jpg":["b0a798f850f00db76ab4b7d33fd31803522141aeec83fcbe59711b90dac79685","artwork-fast/a9a051254d67/pages/page-043.jpg"],"pages/page-061.jpg":["6fd676ad9236c517276da7ef978f476f1354c1867da664ea73f2a73247714fde","artwork-fast/53d9e78cfd4e/pages/page-061.jpg"],"pages/page-078.jpg":["5eda866e5e8b7b23aa44756753f7d1de17145aec4d4caca39250b4485d6619ba","artwork-fast/df4dc2b5b2ae/pages/page-078.jpg"],"pages/page-082.jpg":["0a5160e45c577b20a37340383d741c1f60998d37640276bf2a07b308a1fa8a2d","artwork-fast/c69df2be893e/pages/page-082.jpg"],"pages/page-011.jpg":["d1e38bcf348b8a1d5e7360e980191ce116c50d660e13b69ff58e561f8e3e0ed4","artwork-fast/55eb7c67c78a/pages/page-011.jpg"]};
+        window.ComicReadingArtwork = (source, checksum) => {
+          const route = routes[source];
+          return route?.[0] === checksum ? route[1] : source;
+        };
+
+        // The phone reading layer is a technical resize, never an original.
+        // Canonical JPEGs alone feed lettering, source protection and players.
+        const lightRows = [["3d83cbd23b6ebc001129955b97b8bfcd6756fed32642c58a55b5c31cc33905a9","89ef1c091126b07fcc25cc0a8efeb5de555eb7a8dc7bd5aee2985159cf4591bb",67216],["b4127143f65a2790de7021cdee0e6ced448f0d0bb71d7e66f92bcef650517724","c57accf88e7fae9d86284377c6e3714b78e7160263847a3a27c109f0847b420c",46328],["d2abb879bd7271f8465cc8ab0540b1ab1019bdf995e02ac4e69bddc870a1f235","ff3b5267bd738cf3b976bc5a3273ceba7cb83b3c3980d726c706939fd84c8941",58924],["3d8b7535c5bd7aedb508d2632b005910c188f14f746ba19cfd39cf1f1e6db823","3c49a6d1a2ff320960e61687acb94f4319dd8e7d3ff6eb6f891ef23e7b56c487",83008],["1a0cf95e756558bb78063be628a7f45e39e0fcb96a2c1840c842ade390aa419f","38ab4d901b800a5b65e6a1270c839073921015fabd0103cd09466eb3513723dd",55100],["e8be9fcc042278e4ab2170b7b013226caee025f9db681fc202065c64893cb696","c970e2892c3f13a1a2364ce8dfaeddaea33271b14e3a01225cd75515d28fb94d",58364],["b1238ff07e4cbb9a5d5474e4beea6a6f8b35833499550309f57e6afe81dfbc41","ca62c2629c1f97cfb6d57199a73a17fc2f72fcd6d3492a40542b17c7f1e5a0c5",61210],["cf937b6784caf26771c0b2346a4bb1cd3effb797b915e8c7214199fc2191398d","2f5981337e33c5958ded1f60c59512af0531e8952c3d87efbd170f7df9f6255b",41578],["5898120a6752a1e9c6da051403666242e5867628f67dd15725c578846958ffe1","732984b260016c913992c4df66b668f3877af5543df5100bde464efc4782fe1d",39768],["9646e485789e337cc0f21f96ab212dd7bb46eaa4b93666bbc3b3b7a86a8ba070","a3900ef066069a8fcd7de8368cc979ef7a79544c5c43862dd778112d3130596e",58612],["d1e38bcf348b8a1d5e7360e980191ce116c50d660e13b69ff58e561f8e3e0ed4","45887f33323f671c592bfeb0619f87d191de188eb1991e93b6dca3b2ad8dc8a5",79660],["399588d1d1dc6df20d20ef21da5e262101fa210c2717642beb111b8c78d06caa","bfa2e470a4d74e1492f13bf433a322a2241b89ef9c68c39713851249d6505065",75784],["d0f3c3861ad1cf09a11d687939811900bec9636ec9a9a478e9888b518939dafb","3d5df84cce3b0a24ed010cdb7c5f7c0b96f9a6e74bd9738d8ba84e0e860f14e0",49562],["d54451a154ee9fecacced539013ed6ae5c56f41533d0d487e80d4bdf280b0030","6a374cd00469e49ea7779b9c0bff0e14ab7af69d2e91afdd81d9fcf815ffc2fb",62144],["5898120a6752a1e9c6da051403666242e5867628f67dd15725c578846958ffe1","732984b260016c913992c4df66b668f3877af5543df5100bde464efc4782fe1d",39768],["f03270316c1babf9a6e06ca5384122aea1c4dc286c4d3330a734f96e85f37ef3","30d8b3b59521a3aaa8a1cc4aff23a6d50a364afa087acbb5c4bb060fc76e4ce9",52770],["dc7f3f269ef5f429e6c852c62b3e9b32db37333659a71971c424d8c0f1643d11","5c22c5600a6bffaf198db4bbc52457313d2bf2170bdbf5756a972f80dc020a43",58474],["28fcbdebca3dc4f8f2ddbb55266e1c8ed18466db3f1f91561a374bc71942ad87","716d07cf7da7d39bacdd1247aa5f37b6ae756246259ded48531a19b0bac9153a",79256],["192a5d0335141ceeeac3a3ecfafecca018836c428e1e0cc7d6da04dcf86cdf63","9137fc79fdfc80c2348c5caf8bddb627245f5e5270fc963ee4dff570c9df72da",75074],["3f6e7a41c84c3659bb611ef463e688f208506bcd2ce8542d858116cc64e4061d","d3010e15a6df1e7951cad234fecf0ae1d411a68dff294bc13ecd44e7cefcbe28",56304],["2f22c8f6ad2d1a1dfcb5f397ff003175e3d4369bba91787130d65185f3d386f7","4d1327dbe13cb645be3cd96c2f7a78c820261e4424c26cd43d6d9a393a5e9698",53110],["5a38acd0aa191531fcdd75b979e9b105c0d78a6241df34b38bbd4f6217916a64","a13ec27defa4c8861435d3b0f6ea19e4a788aab14a2ee1f5e7adc9905720b520",51378],["f990ba8c6f80ec0e3eafcf863a191e58fe67caf584fb1ef91f7e68b2aa45f334","8a7f10eda951f12a995f14173b66b6b1f2372afc577b5759d01dff52bc597429",70932],["885f278eab0c73f439fcc645a1740c616c0fa02e021dc2f8943134c0ab176c00","e482481d4f2f143ed477a4c83d1cc12bf07c1ab65a46be24dd0bb4452f4915c5",57902],["c1c27db4206884d4f535e01a572a5ff6a27081d9d1e5e813e144fb92ca849152","72f0288b3dc0cf51be49d671d2f8b42e75e4dac641ee67f6f4957edd591cb719",81150],["433517bca3a12ca97d682bb316ac9e8ce920553bf3a43b83fef32ce0ff79d80c","41815135d463561b577efa5df163accb23d92f5f535dbaae9b7ac373061a2f48",83544],["8bd95fb3a1c5743e10941779a773effcba4ce4b46c35f9dcaeef8afcc8ab5ef9","dfa8e51ad30a2c841a307c1522a0c1f754fc0f709987168ed24ed046e74a1585",80120],["52af737b4422a4d8f957f08cd9b082352461a2c4c70a8166fad8f521a5d936b8","a45fee1cbe2ce3ecd36a55061783ac2e4982c914b0d72018bba9b14d21eca346",60018],["244d4056452a6c71db40ae5902ced6c8f79c3e60547d5b29406ca941c58a65c2","018e180383064d4fc9a9739ae29c5dadec700625a70b8713a155436854f4ba69",63344],["88fa5702dae64d1590ffdbffa425651a17f1fdc994641e88e96aa03213fc6fbc","69988cdc5a4bb3f7211a15e921e15679f256a9f042fafdb16c5114698740ec86",49116],["72c9233a78318aebd868b85afc810a4b5c88c8f1c7ae993703651ce0b930909b","ab101dc25e991ec74b49cf4e1684604ff80d6b9e46aa15701cd129535a4e97b2",32846],["3e356f31b92da31bf6eb235188f8c72ea38e02239f52fa5060d88a4db0fdc365","4f2ea28c239f842718331b5a5daa49c26880f0a09f533b16319a0974202f4615",54814],["6b1c5cc8e98bd9035e3ded0855f165b7c745e9ba3be7bc52c01146847ac18eff","3184e441f368003b0f2544ba95a04938f53ea66ed3e7cf9503ccc61c4852f722",97882],["6d2bce1343bbad77cea279d32cfa8437809e5ff91f28209e37c4b7b5752d009c","1ed01871698fefd2f067583a355745a06440e76054fc9b485cb872ac27499d96",63168],["d2ae2625b99bf326adedf6528804ac19af9e17dd22561576aad3bc3a37a239e5","874012b821b2fd7a8aa7256618697f05c59402e04e4615229fe6b0e284257b23",62376],["dc56169a31e908893108629be6ca203a645179e6be4a1663b394130c81a68fa6","376c2d45bf0f418d43f528fe36b6a8943d16ff1dc0f2023f8443ed911bae4c34",44216],["0d5779bef787ea954ff4cb248719b0b7dca1857869c4fb77c4b0207808503a6d","e7e47c743eb70347f0ee264bb2208ac36b75293cc5bb0c1523bcbd22ce3390eb",46764],["720078cba7982a2e6bcaba5bd9acd976649feea7a70ea59124c418fd409a87d7","2084616a723f307ede866947b5dc7327d8a420ecf72bf4ec476c9e7af355bb84",74614],["dea7d74f84665d733b19e61f75766a9d253f290a373d32f2d6b7e0e2a30db9d4","51faf73cc64f9306d487a6f8ffa9cba58b5b46ac89530e0504d193b4c5d99ce5",67014],["4b8f3158e2981a78a296406c692fcbb2b2c7550470fabf5c4b780663ec54a786","5f82a06c4d6d3a5cf922f5d9a31b7bc495193fb3d2eb955e6f7c958e455e0e45",64026],["e42c89766e016cd241bf1c8f030f9487891eba305cea09d3a758a0f113326b53","76d49eb955f19b62fee339b0c6547a14834bf3ee5ed26eeca1cecd97ac81fd32",42438],["f317a437cd04f0f6f85c7dafa967b325e8e5e53d4f4fd0fbe3ffdb6f95e69da7","7986e104d54e5f625a24d67e3ff76e4d4c237c09ffcecb14c8f860c9c96525b5",38028],["b0a798f850f00db76ab4b7d33fd31803522141aeec83fcbe59711b90dac79685","db6d431fd69ba4998dbd91a8c2953efaf3b005506e1b1104bfbe89eb13afcb3b",58802],["4fd3ea1f0f9ea76602bac26f2b9dc275424ab5fa5c3be2f9222374d520eff047","b47623b39bfcf9a46546e83b5dbc106fe2fbe783d4f858db241b605f238af88d",77088],["9a574ade8f92d604a92592cf96d6bf2acefac16b808491743fe714fcadd7d7eb","ea7e6be69afeab8823ac81cb88def76d24c1836290dfe919d25c2d1131434ba7",62468],["a15a6f4cdc6a750004f3c3549aaf0d4cef42fab426209a62ce5a1ccff4003dca","fbe5b92fd16e006d62e28f911c11fb6cecd9c68994a9d7d5342916d24ad5cf20",52452],["f317a437cd04f0f6f85c7dafa967b325e8e5e53d4f4fd0fbe3ffdb6f95e69da7","7986e104d54e5f625a24d67e3ff76e4d4c237c09ffcecb14c8f860c9c96525b5",38028],["fa57cd4dea07ac7eb802e964fa47855511da971439bd6931e574a6b371f6e6f6","3ae83f7f6fc64c9bcedeb98c75e693869ec08421a4ebf81209a34071da9c16be",64840],["0cba9ec5d51e79ad33ca09b1198cfa4d5b4ab0181c1c1842c303ff2f4ca8c42f","93ff3a428d2682ea5291ad9bbf94f7c1106b2272ad136a99cbb20d586a5c6bb5",58900],["77988fb66855daa0df2b78b70008f2482771eb2294c98b67880119db6f263c19","d7d242998efc790d8774921251f5d96c0b64d559996361e557f0db9d304ab39d",62054],["47504706dace8144a08ad69ccd731ef5764caebc6571f857be16895b3794e02b","f90dd0def73a639bb325d6501d0555015a838fdc7b2981d8046155be22991b42",37958],["be7f84a44f343c71fe38ca148b78059273faddf3c7f5a552fb92bb3edb892d62","c0d5e747c04da15d679539f7a3b043bfd7ba67dfa417e307476799e20dc19993",50980],["834cf97e5c12e12b48c4296a4e8fb37c78d6149120ab12e874d59ea82d9c0ced","8199e3723fcaedb8633188b83ecec8c8e9cac5b7fe87dca2efc4ceab9d9358ed",67616],["d40960c7747bad553b50caaf01d6f7e0448cc225e9943359901a9c41eac2207f","26249beffe42653c3057cf9b884d6c42f6db0734ce4149cd409f16a919a20432",53634],["d87b53abe7d2a9b5f09482d682e788d0e243726af557264c3fa41df8edb36029","77dcfc673a02709343b8c1aeb47825ffcbea4a765f3f0809a12078c7e21b0944",49954],["ce3c81c2d5fdfa1dd406be3a84c42676e773ab906263059e3ae3a969499a75a1","11eb4031f00e109cf5e308a7c5f4c1f8848dc983df72f79b4bf522b33ce15129",64502],["215b0cc03d4cab0ad117ef396e3d9caee1bd2a7b78ba1b1693629d030f4dcd42","d2d36c8afcefe6f44451966f8e156b6c30e9112fab3dee8780a334a8da74c912",25964],["efdff9096debf2473d6ba296671b3983c44bb8e15d6f01bb6140ff19d876de13","fd47e41407fbc132275696851e21ec74e8751ec8d48246bfa481d542d8c058e1",29592],["f73e6dbe62fb70c86878d76304edc9b90e4eb49a127a12cf04702093e6b29d36","cbd9892393ca7f0445bc2ff15e93812e3a8cbf037ad406a7afcebe4b189cf389",69854],["ee5171964728793b33d7fb454b40fca7e7cef4901c203bb54515ec9d509a74a9","37cd482792102a63dd7c33e93baa351e9b842b05e1fed54092445bdc9b96db7d",55942],["6fd676ad9236c517276da7ef978f476f1354c1867da664ea73f2a73247714fde","c5246e82314241698a9e19882aa96a9abde433bd243171c21e36ee03d1fe32a9",48844],["75f589e58d0a0cad6c059c6048b6b0910b9bcffdec4e1e5690535e606c133d0b","3282ddfc081ae8a618fc48b296dd4b6028da80bb26fdf0711b2650e519ffa059",68746],["af8c6fe431624bc7260f376b163e54025bbc5540fb74026f32f29825d01d101a","2b2f65a2063ac698d036e10c21d1ffd7643af8a547d7b72b64fb256521ac7eb7",65248],["76644a524b88a088883bb81f8f1efa7e71ab5674623a1e19d114279fc4537072","5f6f6ad2e59a4ea63a4acf32ffb4aa9fb7d0b5f4c657d22cb9103202b9438daa",72810],["e868b08f2f9c9ca7d0f4b3330e649c5970dfecd3b2a92b78767737762b5aff3e","6247ee1499814983387b7454f065e1e542354849c79dc425b2cb29dcfd0c0816",41308],["9179d8a69daf8dab57453db107db57d3b1cfb1ba4efb420b0bf7f52c0e34364a","bbf546c42e4187b1b9c4b153e9626dd78c31f87dc5e54c3b043dc0149dcc0046",39264],["f98f82de9e1e1600916404826b414854c5f267c75ebe635715a382d308ce95ba","559dbbc28dffbbd680dbe72d5b2c7403fb7ac4c9dc6b63923b2016bb6d16d638",66842],["e362fd9663c5d63fa41d0fb332fbf841eb7e739b629513a255005ff090f77129","2828345c37b3d87f156df278fbc6cb91c04a678424eda1062f6e98c4df6f6ca8",64002],["ea022af0c5bd71d772b977d39916d74b607e47b583df24021cf926ffe2b07fb6","7218e4ac3419698aa85d45281f599f1065c1c1aeb53f97b60abcebf0f2c6303f",70722],["e3dd752bac87c731b169f718e9a2bcc8f570d17b46780d9afa1c8b9ff85bdbe7","743fec977a7a91fabd8404e75c581eecea4deced32e6d7dde098a06647a97e76",42244],["d3282431e3c2248c2377838e3a240715414622c81e48a797c63eddcb9166e278","86e55d783e3881b9faa7befa76f5b89d1069f7f35e1f68f15ec7dc40af92322e",48700],["9179d8a69daf8dab57453db107db57d3b1cfb1ba4efb420b0bf7f52c0e34364a","bbf546c42e4187b1b9c4b153e9626dd78c31f87dc5e54c3b043dc0149dcc0046",39264],["815440655c6202a55e9ce738cdf537666a5cc80ea28e7d9234020cc21bd9bdca","8c503fb813ca43d6610c541fd986baeedca1b4f80af95afe66debc7128d91bec",60254],["37e2b084f146f01c2ce52e6853d401329d39c21051f7cf3f525d3ee76955b06a","e2d67f450d146765b97839924c2d989ed44e818755f92f876ccac04b2802952a",59814],["fa3314e2f5700c49735adcb9f544426e627a9a06cf612e66b301a9ff742db062","a10eee9a2f5a637412be414bc11e24035b11377d60d9129de26ba66026765823",57460],["50783628898cc61adb7b49de359f260b0ab0c6144c70d6f45dbe02cf7167a78a","d4eeedf219b74d0d8fd81d1d9409b0c7e18161563c28be1c5ee8f30b9a264554",39280],["0b0eaf03dc06e390bf1b664292048cb975e56c165f6bbd6631fd73c78ba76193","3785e706192d36520e9a19345f39589ddb847af5f35dc46633ec631a4960e53e",59566],["5eda866e5e8b7b23aa44756753f7d1de17145aec4d4caca39250b4485d6619ba","44dd0663f35510762a783914a20f973d5a6d3de6eacd83952e77b7b0ccdc956f",72552],["ae696ac6b53f1896e16f794cf9ff836f375441181f7be212a05374d25c1221ee","c9585dad9109f57b49244bf6e6eff094740b07fcf659263e343e8213c2c91e2e",81006],["e4f367a4c85b70d748ece4ebc8e032ecd9e9a6a63f762b3ef6b0f6742a8ee252","f466fda326af70575d3f46d00d54a84fe854b2e13612e716e6bfd4f4bcfb7919",77144],["9469812866216a3c1fb787344c1f6a8330fd5ddd4054a7dde5942b16c1cb746c","b435a7cafe9a2ffcd76c3e759955a801ef3dec3857610b214f861c733bd4e1e0",69740],["0a5160e45c577b20a37340383d741c1f60998d37640276bf2a07b308a1fa8a2d","ac53ea1c8f8e5eeacdf0f61638e20d77cc520eb7d78c9b9f75176cc0e1016b23",76210],["0039d539626e517bfda460eddccdfd78bed97b1721a569db2615cb70db8622eb","18049518ab613a03a7a4a469871836cff7c74c987be11bf36a18f5e4a71e2eb0",41152],["2dce26fcb0d0248da845834f875520f43f5422d287ebf55e183be0f54689fe41","76d9a4242a725bd88e519854f3f4e183695576dad34ea17883191e8a75f78ca3",32466],["5013a05bd76c66b635556a0f4ca5eed8196d75926c8064e313ea28fec27ac432","ef9738e9f009a085ebc5bd5191c614f1754fd7b3288f4fefe259334691d0f76f",81662]];
+        const lightBase = 'https://xhuozhong.github.io/just-cuz-orbit-assets/reading/q298b/';
+        const nativeKey = 'just-cuz-reading-native-session-v1';
+        let nativeSeen = {};
+        try { nativeSeen = JSON.parse(sessionStorage.getItem(nativeKey) || '{}') || {}; } catch (_) {}
+        let lightJob = null;
+        const lightEligible = () => window.matchMedia?.('(max-width:600px)').matches && !!window.crypto?.subtle;
+        function lightRoute(number) {
+          const row = lightRows[number-1];
+          if (!row) return null;
+          return {page:number, source:'pages/page-' + String(number).padStart(3,'0') + '.jpg', sourceSHA256:row[0],
+            sha256:row[1], bytes:row[2], nativeWidth:1600, nativeHeight:number === 37 ? 1999 : 2000,
+            width:1000, height:number === 37 ? 1249 : 1250,
+            url:lightBase + 'page-' + String(number).padStart(3,'0') + '-' + row[1].slice(0,16) + '.webp'};
+        }
+        function exactLightPage(page, route) {
+          return route && page.source === route.source && page.sha256 === route.sourceSHA256 &&
+            page.width === route.nativeWidth && page.height === route.nativeHeight;
+        }
+        function remembered(route) { return nativeSeen[route.sourceSHA256] > Date.now() - 10 * 60 * 1000; }
+        function clearLight() {
+          if (!lightJob) return;
+          clearTimeout(lightJob.timeout); lightJob.controller.abort(); lightJob.image?.remove();
+          if (lightJob.objectURL) URL.revokeObjectURL(lightJob.objectURL);
+          const stage=document.getElementById('page-stage');
+          if (stage?.dataset.readingPreviewPage===String(lightJob.route.page)) delete stage.dataset.readingPreviewPage;
+          lightJob = null;
+        }
+        function startLight(route) {
+          if (!route || !lightEligible() || remembered(route)) return null;
+          if (lightJob?.route.sourceSHA256 === route.sourceSHA256) return lightJob;
+          clearLight();
+          const item = {route, controller:new AbortController(), image:null, objectURL:null, token:null};
+          lightJob = item;
+          item.timeout=setTimeout(() => { if(lightJob===item && !item.image) clearLight(); },6000);
+          item.ready = (async () => {
+            const response = await fetch(route.url, {signal:item.controller.signal, mode:'cors', credentials:'omit', cache:'force-cache', priority:'high'});
+            if (!response.ok || !response.body?.getReader) throw new Error('Reading preview unavailable');
+            const reader = response.body.getReader(), data = new Uint8Array(route.bytes);
+            let offset = 0, complete = false;
+            try {
+              for (;;) {
+                const part = await reader.read();
+                if (part.done) break;
+                if (offset + part.value.byteLength > data.length) throw new Error('Reading preview size mismatch');
+                data.set(part.value,offset); offset += part.value.byteLength;
+              }
+              if (offset !== data.length) throw new Error('Reading preview size mismatch');
+              complete = true;
+            } finally { if (!complete) { try { await reader.cancel(); } catch (_) {} } reader.releaseLock(); }
+            const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',data)), b => b.toString(16).padStart(2,'0')).join('');
+            if (digest !== route.sha256 || lightJob !== item || item.controller.signal.aborted) throw new Error('Reading preview integrity mismatch');
+            const img = new Image(); img.decoding = 'async'; img.draggable = false;
+            item.objectURL = URL.createObjectURL(new Blob([data],{type:'image/webp'}));
+            img.src = item.objectURL; await img.decode();
+            if (img.naturalWidth !== route.width || img.naturalHeight !== route.height || lightJob !== item || item.controller.signal.aborted) throw new Error('Reading preview dimensions mismatch');
+            img.id = 'page-reading-preview'; img.alt = 'Just Cuz · page ' + route.page + ' · reading preview';
+            img.width = route.nativeWidth; img.height = route.nativeHeight;
+            img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:fill;z-index:3;pointer-events:none';
+            clearTimeout(item.timeout); item.image = img; return item;
+          })().catch(() => { if (lightJob === item) clearLight(); return null; });
+          return item;
+        }
+        const firstLightRoute = lightRoute(page);
+        const firstLight = startLight(firstLightRoute);
+        window.ComicReadingLight = Object.freeze({
+          pending(page) { const route=lightRoute(page.page); return !!(lightEligible() && exactLightPage(page,route) && !remembered(route)); },
+          show(page,token,stage) {
+            const route=lightRoute(page.page);
+            if (!exactLightPage(page,route)) { clearLight(); return Promise.resolve(false); }
+            const item=startLight(route);
+            if (!item) return Promise.resolve(false);
+            item.token=token;
+            return item.ready.then(result => {
+              if (!result || lightJob!==item || item.token!==token || item.controller.signal.aborted) return false;
+              stage.append(item.image); stage.dataset.readingPreviewPage=String(page.page);
+              document.dispatchEvent(new CustomEvent('comic-page-light-ready',{detail:{page:page.page,generation:token,sourcePageSha256:page.sha256}}));
+              return true;
+            });
+          },
+          cancelUnless(page) { if (lightJob && !exactLightPage(page,lightJob.route)) clearLight(); },
+          finish(page) {
+            const route=lightRoute(page.page);
+            if (!exactLightPage(page,route)) return;
+            nativeSeen[route.sourceSHA256]=Date.now();
+            try { sessionStorage.setItem(nativeKey,JSON.stringify(nativeSeen)); } catch (_) {}
+            if (lightJob?.route.sourceSHA256===route.sourceSHA256) clearLight();
+            const stage=document.getElementById('page-stage');
+            if (stage?.dataset.readingPreviewPage===String(page.page)) delete stage.dataset.readingPreviewPage;
+          },
+          cancel:clearLight,
+          first:firstLight ? {page:page, source:firstLightRoute.source, sha256:firstLightRoute.sourceSHA256,
+            width:firstLightRoute.nativeWidth,height:firstLightRoute.nativeHeight,ready:firstLight.ready} : null
+        });
+        addEventListener('pagehide',clearLight,{once:true});
+
+        link.fetchPriority = firstLight ? 'low' : 'high';
+        link.dataset.originalSource = canonical;
+        link.href = routes[canonical]?.[1] || canonical;
+        document.head.appendChild(link);
+      } catch (_) {}
+    })();
+  </script>
+  <script id="current-page-details-preload">
+    (() => {
+      'use strict';
+      try {
+        const original = document.getElementById('current-page-original-preload');
+        const page = Number(original?.dataset.originalSource?.match(/page-(\d+)\.jpg$/)?.[1]);
+        if (!page) return;
+        // Q198 current-page shard hashes (generated from frame-sequences.js).
+        const hashes = atob('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');
+        const start = (page - 1) * 32;
+        const hash = Array.from(hashes.slice(start, start + 32),
+          byte => byte.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+        const shard = document.createElement('link');
+        shard.id = 'current-page-shard-preload';
+        shard.rel = 'preload'; shard.as = 'fetch'; shard.crossOrigin = 'anonymous';
+        shard.href = 'frame-config/page-' + String(page).padStart(3, '0') + '-' + hash.slice(0, 12) + '.json?sha256=' + hash;
+        document.head.appendChild(shard);
+        // End current-page shard preload.
+        const modelHashes = atob("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");
+        window.ComicModelPacket = number => {
+          if (!Number.isSafeInteger(number) || number < 1 || number > 85) return null;
+          const offset = (number - 1) * 32;
+          const sha256 = Array.from(modelHashes.slice(offset, offset + 32),
+            byte => byte.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+          const url = 'book-models/page-' + String(number).padStart(3, '0') + '-' + sha256.slice(0, 12) + '.json?sha256=' + sha256;
+          return {url,sha256};
+        };
+        const model = document.createElement('link');
+        model.id = 'current-page-model-preload'; model.rel = 'preload'; model.as = 'fetch'; model.crossOrigin = 'anonymous';
+        model.href = window.ComicModelPacket(page).url;
+        document.head.appendChild(model);
+        const letteringHashes = atob('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');
+        window.ComicLetteringPacket = number => {
+          if (!Number.isSafeInteger(number) || number < 1 || number > 85) return null;
+          const offset = (number - 1) * 32;
+          const sha256 = Array.from(letteringHashes.slice(offset, offset + 32),
+            byte => byte.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+          const url = 'lettering/page-' + String(number).padStart(3, '0') + '-' + sha256.slice(0, 12) + '.json?sha256=' + sha256;
+          return {url,sha256};
+        };
+        const lettering = document.createElement('link');
+        lettering.rel = 'preload'; lettering.as = 'fetch'; lettering.crossOrigin = 'anonymous';
+        lettering.fetchPriority = 'low'; lettering.href = window.ComicLetteringPacket(page).url;
+        document.head.appendChild(lettering);
+      } catch (_) {}
+    })();
+  </script>
+  <script id="current-source-mask-hints">
+(() => {
+  'use strict';
+  if (navigator.connection?.saveData || !window.crypto?.subtle || typeof AbortController !== 'function') return;
+  const original = document.getElementById('current-page-original-preload');
+  const source = original?.dataset.originalSource;
+  const shard = document.getElementById('current-page-shard-preload');
+  const route = shard?.getAttribute('href');
+  const match = route?.match(/^frame-config\/(page-\d{3})-([a-f0-9]{12})\.json\?sha256=([a-f0-9]{64})$/);
+  if (!match || source !== 'pages/' + match[1] + '.jpg' || match[2] !== match[3].slice(0, 12)) return;
+  const controller = new AbortController(), transfers = new Map();
+  const checksum = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('');
+  const sha = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+  let pageHash = null, originalReady = false;
+  const discard = () => {
+    clearTimeout(timer);
+    original.removeEventListener('load', begin);
+    removeEventListener('hashchange', turn);
+    removeEventListener('pagehide', discard);
+    controller.abort();
+    for (const item of transfers.values()) item.discard();
+    transfers.clear();
+  };
+  const turn = () => {
+    const next = location.hash.match(/^#page=(\d+)$/);
+    if (next && Number(next[1]) !== Number(match[1].slice(5))) discard();
+  };
+  // This consumes the same current-page preload. The regular loader receives
+  // these exact bytes and still performs all of its ordinary checks.
+  const packet = fetch(route, {signal:controller.signal, cache:'force-cache'}).then(async response => {
+    if (!response.ok) return null;
+    const bytes = await response.arrayBuffer();
+    if (!bytes.byteLength || bytes.byteLength > 1024 * 1024 || await checksum(bytes) !== match[3] || controller.signal.aborted) return null;
+    const value = JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(bytes));
+    if (value.schemaVersion !== 1 || !Array.isArray(value.entries)) return null;
+    const rows = Array.isArray(value.sourceMasks) ? value.sourceMasks : [];
+    if (rows.length && rows.every(row => row.pageFile === source && sha(row.pageSHA256) && row.pageSHA256 === rows[0].pageSHA256)) pageHash = rows[0].pageSHA256;
+    return {bytes, rows};
+  }).catch(() => null);
+  async function begin() {
+    originalReady = true;
+    const ready = await packet;
+    if (!ready || controller.signal.aborted || !pageHash) return;
+    const masks = new Map();
+    for (const row of ready.rows) {
+      if (row.pageFile !== source || row.pageSHA256 !== pageHash || !/^[a-zA-Z0-9-]+\.png$/.test(row.maskFile) ||
+          !sha(row.maskSHA256) || !Number.isSafeInteger(row.maskBytes) || row.maskBytes < 1 || row.maskBytes > 65536) return;
+      const prior = masks.get(row.maskFile);
+      if (prior && (prior.maskSHA256 !== row.maskSHA256 || prior.maskBytes !== row.maskBytes)) return;
+      masks.set(row.maskFile, row);
+    }
+    if (masks.size > 8 || [...masks.values()].reduce((sum, row) => sum + row.maskBytes, 0) > 65536) return;
+    for (const row of masks.values()) {
+      const abort = new AbortController();
+      const stop = () => abort.abort();
+      controller.signal.addEventListener('abort', stop, {once:true});
+      const response = fetch('source-mask-assets/' + row.maskFile + '?sha256=' + row.maskSHA256,
+        {signal:abort.signal, cache:'force-cache', priority:'low'}).then(value => {
+          if (value.ok) return value;
+          void value.body?.cancel().catch(() => {});
+          return null;
+        }).catch(() => null);
+      transfers.set(row.maskFile, {
+        hash:row.maskSHA256, response,
+        discard() { controller.signal.removeEventListener('abort', stop); stop(); },
+        take(signal) { signal.addEventListener('abort', stop, {once:true}); return response; }
+      });
+    }
+  }
+  const timer = setTimeout(discard, 15000);
+  original.addEventListener('load', begin, {once:true});
+  addEventListener('pagehide', discard, {once:true});
+  addEventListener('hashchange', turn);
+  window.ComicEarlySourceMasks = Object.freeze({
+    cancelUnless(nextSource, nextHash) { if (nextSource !== source || pageHash && nextHash !== pageHash) discard(); },
+    async packet(pageSource, path, hash, signal) {
+      if (pageSource !== source || route !== path + '?sha256=' + hash || signal.aborted || controller.signal.aborted) return null;
+      signal.addEventListener('abort', discard, {once:true});
+      return (await packet)?.bytes ?? null;
+    },
+    take(pageSource, hash, file, maskHash, signal) {
+      if (!originalReady || pageSource !== source || hash !== pageHash || signal.aborted || controller.signal.aborted) return null;
+      const item = transfers.get(file);
+      if (!item || item.hash !== maskHash) return null;
+      transfers.delete(file);
+      return item.take(signal);
+    }
+  });
+})();
+
+  </script>
+  <script id="current-small-preview">
+    (() => {
+      if (navigator.connection?.saveData) return;
+      const original = document.getElementById('current-page-original-preload');
+      const page = Number(original?.dataset.originalSource?.match(/page-(\d+)\.jpg$/)?.[1]);
+      if (!page) return;
+      const first = 'page-001-panel-01-lite21-f11947a00e5a0054:f11947a00e5a0054ca164ed58e83dc02c83bb9b9b5e5d23228277f5322962680,page-002-panel-01-lite21-207a894865cf0cae:207a894865cf0caec3a32fd2c7724e06789000c5d2432dbea0f1d0e6a42b99c9,page-003-panel-01-lite21-dd820bff972b457a:dd820bff972b457a1c07efc62e6a2ae4f2187ef0da5a71abbda1e96ed4ba0a35,page-004-panel-01-lite21-14ed8293a0be06fa:14ed8293a0be06fa4d8288fe5c34e73bed219f919c67cebb861e7137e86275ca,page-005-panel-01-lite21-8ad7dad489849312:8ad7dad489849312f19e2375e231c81dfe27d2e5715101444c966a12099bfe86,page-006-panel-01-lite21-cacd7d06cb288dd2:cacd7d06cb288dd27ed743d7d2e781eaf02f89d68dfaa7c9d845e5f508570be4,page-007-panel-01-lite21-8ca64575e133c9f2:8ca64575e133c9f216913fc008f4a1a2a7a0cadbd8f8ca6e66dd43dedaaef725,page-008-panel-01-lite21-631dfdef9792d970:631dfdef9792d9704353bc4797085c62653bc48797e79cde313e5482b28c53b3,page-009-panel-01-lite21-7ee3b0e4bf4dddf5:7ee3b0e4bf4dddf552a5aee5086f49f4866d0cc62178d292d81729dc69e11e8b,page-010-panel-01-lite21-0e08477e193a9894:0e08477e193a9894be21a1b83e443c41b9a2d7dc29b3c745fdf61feaa3e26002,page-011-panel-01-closer-2cb66d7e4e7f/000:ef0e9e4545f00dfb24933edd3f6afa25ec126238c989f39ab9d5100415dc7fd6,page-012-panel-01-lite21-783cdb9eab222be5:783cdb9eab222be5f704bafabc1afc1cba820ea9f5d59dd9a50fb42ec024186f,page-013-panel-01-lite21-8a46739072cc3a3f:8a46739072cc3a3fdd86ae41a0ceaed1bfd89c04a719aaf37c002536b22a5521,page-014-panel-01-gasp-lite21-6ab373ee1232175e:6ab373ee1232175e237e097e6ada0f115d0ef003d5e907c8eae4d2065022a819,page-009-panel-01-lite21-7ee3b0e4bf4dddf5:7ee3b0e4bf4dddf552a5aee5086f49f4866d0cc62178d292d81729dc69e11e8b,page-016-panel-01-lite21-17656f38c25489c6:17656f38c25489c6f9cf02003adf36527a64e52508274359bc2ca72edb4c9537,page-017-panel-01-lite21-d84f41c29f9d9b3e:d84f41c29f9d9b3e3459f536e8b34037cdefb5ba2e739daecae747ad30a421dd,page-018-panel-01-lite21-6983d3844e26c78f:6983d3844e26c78ff8fabb37fc763d0fff4d0580018f53c9b8ef0f2e559d0845,page-019-panel-01-lite21-2dbc3f26a983761a:2dbc3f26a983761a84ee31d33614de21a64275165a4ffd8301203625ae1f30d2,page-020-panel-01-lite21-2383953d06cea8f2:2383953d06cea8f222bc295850714ef0780d3af6b005f9081e9a89c27fec0bc4,page-021-panel-01-lite21-f86d4fb93011a81b:f86d4fb93011a81b8fbe5aa311ab014e24f2ea11c87b16b9475cfb18686991b3,page-022-panel-01-lite21-fd6ba614e79247a3:fd6ba614e79247a3029bf3aa56f9a5dfff7f8a8abce03e9044b5d7163a97e5f3,page-023-panel-01-lite21-7dbb66ff45d30efe:7dbb66ff45d30efe007260896f9b672d8c4571337841b60e3dee624c05178ecb,page-024-q205-083d0a1df036/000:1570c179b2fd753cff031f5376448d724065080eb6e2f6c564b210ce38f277f2,page-025-panel-01-lite21-4193298d76eeadb4:4193298d76eeadb46b6e27e81e6c19b25c9b2eeae2cb1914a15e3f1ba628e453,page-026-panel-01-lite21-0437f9aabd720206:0437f9aabd7202069f67b3966ba9e6be9822ea9f1fe068202a4dda2b48372e81,,,page-029-panel-01-lite21-d854cc65a58f05c1:d854cc65a58f05c130e5a8f1590b438d8e8cb5d09d60e6030923f41baaa969aa,page-030-panel-01-cd10c55695d5-coverage24/000:85663b8bf38c27b4f26de67965e0648290210fe0f86795f8d397f96a7ad8c79e,page-031-panel-01-68d586e2cb06-coverage24/000:b25d50ccc6efc9b06dc5f6b56ed0101952ed387e6734be863c5df52ca374b592,page-032-panel-01-lite21-052fdae259bc3083:052fdae259bc3083a73f4ac3d01a61b395c3237304eba444982d08bcbd7bfbc9,page-033-wan-q138-q90-uniform24-8e340c3c23cf/000:38ee764a8fd32c821596c4cb4e7a2ce2093a552f593d8b02b115760bd8e91b9e,page-034-panel-01-lite21-0cae9663927c678d:0cae9663927c678d59bf625ac072588d8092f9b5234ed39286ec8bd942dcafa3,page-035-panel-01-lite21-48e19fae63ddd014:48e19fae63ddd014b9dac75821af7613c5cbdf6b52a877a70592a1b19862560a,page-036-panel-01-lite21-4836f35c15214741:4836f35c15214741616fc4e0564d1d38d71d3a3a86fad9b14917074c0eb533b8,page-037-h3-139-q77-256-q84-2e271429f702/000:2e271429f7023958e585bf7a469b284b1d74dc887fc735f9da1a62c76ecc5b21,page-038-panel-01-d5897d8ea58c-coverage24/000:534ed202df109756f75cde266368194555deb2e94dea4ecfb5a256236cc57021,page-039-panel-01-q277-2414dfe031f8/000:d6d19809c88eb2742803358b47d0ff147be691fc09bf5a15a06d85e09f288490,page-040-panel-01-lite21-440e3cd9a5933eb1:440e3cd9a5933eb123bda47c7e4c9b29807d6113ebc9a58cb3b3d1d49ecfc90e,page-041-panel-01-lite21-759d047b20ca6208:759d047b20ca6208dae7bd1869c4eff86c5b965b5e4b2c888e72edf71b9d23d8,page-042-panel-01-lite21-a898b45a97bd4bf4:a898b45a97bd4bf43f4678b1a52716af9784980a2344b0798e2f262f473eb728,page-043-panel-01-q286-ca4687e4af02/000:b471c371e8750ef5bd632b9dfbed28c4b64512b09a10257090775b5583722d28,page-044-panel-01-lite21-e3345431d97dcdfb:e3345431d97dcdfb41c986383fc7d075c568846986a3eb179155571de978a6a5,page-045-panel-01-lite21-dac9cdd7e6d88e30:dac9cdd7e6d88e30ceed98f1da377c8ae23a1cf098c1f9650b67bf715ae65542,page-046-panel-01-lite21-d4db5ab5a9732811:d4db5ab5a97328116cd45bb01ef2dd447ec51f3412f5d2b424564783cf2a0f07,page-042-panel-01-lite21-a898b45a97bd4bf4:a898b45a97bd4bf43f4678b1a52716af9784980a2344b0798e2f262f473eb728,page-048-panel-01-60cb9cb298e7-coverage24/000:de3bfc5845b5e5ed5156df55a203eba56f6094d629428164a4de3e3d256d43a2,page-049-panel-01-lite21-3dd6aeac72f34d30:3dd6aeac72f34d30de934f7d6e7b8509ffa82959864c8d099c3612f95f2fef83,page-050-panel-01-lite21-0c65fbee31cf3132:0c65fbee31cf3132a358cbce834cc3fb1a4790507c5af28f920584b1eea7f0c0,page-051-panel-01-lite21-e846c9723cd0d278:e846c9723cd0d278c553c5e19c168953e7fd8576024d49e433c60ef6e4c4eb08,page-052-panel-01-lite21-3d636df51546aba5:3d636df51546aba59ae4c6890ea440946dc8b7d78e66048936b08e3d0fad951d,page-053-panel-01-ef3a94c66605-coverage24/000:5262fb8c04327861e92531b32826989f3b667308a07265f8e29a4065f8d796e0,page-054-panel-01-7785cb9ad4bf-coverage24/000:e6a33c059c1ef049b7c5f961eeb8be8100f8b02f3bee37ee054ca8c04c1d51dd,page-055-panel-01-lite21-2e210db66b320b9f:2e210db66b320b9f184738b763ebbf6e8c84019fbef4d5e72969b69ef6b1d427,page-056-panel-01-c1e8fa076608-coverage24/000:e337543286299ac7026441ab9249ee0c3116482d42c706e8de3f41edaea02e91,page-057-panel-01-lite21-de3597c54475c683:de3597c54475c6834dfea5972a680a1c0876cade8db30e90dfd5456dfcdc9eb1,page-058-panel-01-lite21-2f3059ac14dda8f1:2f3059ac14dda8f12ba7d3f47f8e98d5e94501e8cc250f92962f5e8ed2680e70,page-059-panel-01-d0a71d178493-coverage24/000:cbcc5cfb6cf14c381c92d9b6394bfcc8a2b64c2cda1a7d9de234dde95b08772f,page-060-panel-01-lite21-91d17604ee6a5e42:91d17604ee6a5e4273fa448a7fa0c9acd875a95abdbab3dcd4449f2e7767617a,page-061-panel-01-74062a337525-coverage24/000:d4a1fa710468656fae083160fd22765ac2f66a8c6ace36a06d8d63e4840c2dec,page-062-panel-02-fc75089ebb95-coverage24/000:5eacf0c09c3085529f664ba2bc342c106f3156bf7cbbb3f2be3c7d7a86a8b07f,,,page-065-panel-01-lite21-d9c7a509bc7b2a63:d9c7a509bc7b2a63ee4bd5ce4d07beff10e98c9cfb95db6bd38e19d20e1c98a0,page-066-panel-01-lite21-90b6cfec6f45e912:90b6cfec6f45e912198578ccde9057d1553d9afbf0757780846cbae44a60f582,,page-068-panel-01-06e181813ec7/000:41b7f1647aa10affed3f28ea52a5e01be99b5ed32ceef477535e8747c2447087,page-069-panel-01-34828e1e841e-coverage24/000:d19d0782ba5b18140151394b8cd6ec593f5620ac3d3fec55456b07637f2ae3c6,page-070-panel-01-19f766a18fe7-coverage24/000:498e1443d298f760e48ef54719e1b47b5dedf5e2d4dee4ddbee72bd412212f26,page-071-panel-01-draft-gasp-6d8be8aaebe2-coverage24/000:c6367e300acea7cbc431418cd23b02d53c5312f424acb7d10b5b56a018e75a51,page-066-panel-01-lite21-90b6cfec6f45e912:90b6cfec6f45e912198578ccde9057d1553d9afbf0757780846cbae44a60f582,page-073-panel-01-lite21-1b4c1f05e77a66d1:1b4c1f05e77a66d1baf55eba2165de2654f5a2bfb1d952e7018fa2a5ba763708,page-074-panel-01-lite21-e6995a0edaa3a69d:e6995a0edaa3a69d1e1133870506d29dfc425bfb4ee7ee4ef7bfafb1ae92068d,page-075-panel-01-draft-075-gasp-4d388732ad82-coverage24/000:32170e710c711c461a4c4a66a143a1f71527007cda054af533f38721c7a15aef,page-076-panel-01-lite21-9ab15151e9f85ec0:9ab15151e9f85ec045dfae0eba5598bcff591ef21ab494648e5f679835c60f5d,page-077-panel-01-lite21-21a414471e7cb3f3:21a414471e7cb3f3672d21792f11d9d2ba9c7cc1f5f0984d572c51902c12c175,page-078-panel-01-lite21-c22d46d3d913cea1:c22d46d3d913cea11b9eeaa8533ded72f0dc95ded52784b4324f16a47ce92f80,page-079-panel-01-4f3b432e0006-coverage24/000:f2993abad24edd1ceec8c6a3192b8356bceec0e9fb41e6067d1c4a178223d65a,page-080-panel-01-152793fed477/000:8ff15999aebccfb091ab2dbda23795383e693492c0e28c88e22afe413b693fba,page-081-panel-01-lite21-471a61f3043c0047:471a61f3043c00473218959f7172903dcfc8f2ccb14f46f31ccaacc207f9e833,page-082-panel-01-f45d95885f15-coverage24/000:0dd731b9da508af5f646eeb642e41eaee7116bded6b4ecade0d66b049e52aa1c,page-083-panel-01-lite21-e695f6dcfdc68b19:e695f6dcfdc68b191746324e09a62ab7fcc557a4cd824ce6614b4df148005efe,page-084-panel-01-075ac4a53365-coverage24/000:ec65dceae2209816c5bff260521e4801629119181a84c0275a917b71aa288fec,page-085-panel-01-4006375e2430-coverage24/000:ea2a3dac80a938c85a860c8671a3fd61a93e0e654b5e39d2b1fac96d3c1ed313'.split(',')[page - 1];
+      const second = {"14":["preview-packs/page-014-panel-01-stomp-q248-31e3d4c571f2/000.orbf","31e3d4c571f2874981ec707521a4490b29c5cb2b4e34ee0c8304c7f16cd8327c",true]}[page];
+      const transfers = new Map();
+
+      function prepare(source, hash, afterOriginal) {
+        const controller = new AbortController();
+        let response = null;
+        const begin = () => {
+          if (response || controller.signal.aborted) return;
+          response = fetch((source === "preview-packs/page-043-panel-01-q286-ca4687e4af02/000.orbf" && hash === "b471c371e8750ef5bd632b9dfbed28c4b64512b09a10257090775b5583722d28" ? "https://xhuozhong.github.io/just-cuz-orbit-assets/p043-q286/preview-packs/page-043-panel-01-q286-ca4687e4af02/000.orbf" : source) + '?sha256=' + hash, {signal:controller.signal,
+            mode:'cors', credentials:'omit', cache:'force-cache', priority:'low'})
+            .then(value => {
+              if (value.ok) return value;
+              void value.body?.cancel().catch(() => {});
+              return null;
+            }).catch(() => null);
+        };
+        const stop = () => {
+          clearTimeout(timer);
+          removeEventListener('pagehide', discard);
+          removeEventListener('hashchange', discardOnTurn);
+          original.removeEventListener('load', begin);
+          transfers.delete(source);
+        };
+        const discard = () => { stop(); controller.abort(); };
+        const discardOnTurn = () => {
+          const target = Number(location.hash.match(/^#page=(\d+)$/)?.[1]);
+          if (target && target !== page) discard();
+        };
+        const timer = setTimeout(discard, 15000);
+        addEventListener('pagehide', discard, {once:true});
+        addEventListener('hashchange', discardOnTurn);
+        transfers.set(source, {
+          take(checksum, signal) {
+            if (checksum !== hash || signal.aborted || controller.signal.aborted) return null;
+            if (!response) { discard(); return null; }
+            stop();
+            signal.addEventListener('abort', () => controller.abort(), {once:true});
+            return response;
+          }
+        });
+        if (afterOriginal) original.addEventListener('load', begin, {once:true});
+        else begin();
+      }
+
+      if (first) {
+        const [name, hash] = first.split(':');
+        prepare('preview-packs/' + name + '.orbf', hash, true);
+      }
+      if (second) prepare(second[0], second[1], second[2]);
+      if (transfers.size) window.ComicEarlyPreview = {
+        take(path, sha, signal) { return transfers.get(path)?.take(sha, signal) ?? null; }
+      };
+    })();
+  </script>
+  <link rel="stylesheet" href="reader-styles-7bb8a4d8661e.css">
+  <script defer src="reader.js?v=q298b-ed237115ec84"></script>
+  <script defer src="phone-orbit.js?v=8786f52f42c1"></script>
+  <script id="page-model-loader">
+(() => {
+  'use strict';
+  const active = new WeakMap(), ready = new WeakSet(), retry = new WeakSet(), pins = new WeakMap(), protectionResources = new WeakMap();
+  // Independent reviewed runtime pins. These digests are never derived from the canonical model.
+  const pinAuthority = {"14":{"kind":"q140-transparent-delivery","source":"d54451a154ee9fecacced539013ed6ae5c56f41533d0d487e80d4bdf280b0030","sha256":"7897e7f393d71b2a92cb7ef2d3250513693beee3959802768a735a15661d68ff"},"26":{"kind":"p026-source-cloud","source":"433517bca3a12ca97d682bb316ac9e8ce920553bf3a43b83fef32ce0ff79d80c","sha256":"636a3708c00137419a93039cb306ccb472b177476e0012c59f348d4d1bb5c7c1"}};
+  const encoder = new TextEncoder();
+  const hash = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
+  function freeze(value) {
+    if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
+    return value;
+  }
+  async function verifiedPin(page, record) {
+    const authority = pinAuthority[page.page], pin = record.runtimePin;
+    if (!authority) {
+      if (pin !== undefined) throw new Error('Unexpected page verification pin');
+      return null;
+    }
+    if (page.sha256 !== authority.source || pin?.kind !== authority.kind || !pin.value ||
+      await hash(encoder.encode(JSON.stringify(pin))) !== authority.sha256) throw new Error('Independent page verification pin mismatch');
+    return freeze(pin);
+  }
+  function pin(page, kind) {
+    const record = pins.get(page);
+    return record && record.kind === kind ? record.value : undefined;
+  }
+  const identity = ['id','page','source','sourcePage','sha256','width','height','episode','role','bytes'];
+  const aborted = () => new DOMException('Page changed', 'AbortError');
+
+  async function inspect(page, bytes) {
+    const route = window.ComicModelPacket?.(page.page);
+    if (!route || !bytes.byteLength || bytes.byteLength > 256 * 1024) throw new Error('Invalid page model size');
+    if (await hash(bytes) !== route.sha256) throw new Error('Page model checksum mismatch');
+    const record = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+    if (record.schemaVersion !== 1 || !record.page || identity.some(key => page[key] !== record.page[key])
+      || !Array.isArray(record.page.panels) || !Array.isArray(record.page.panelSources)) throw new Error('Page model does not match its original');
+    const model = record.page, verified = await verifiedPin(page, record);
+    if (verified) pins.set(model, verified);
+    if (record.protectionResources) protectionResources.set(model, freeze(record.protectionResources));
+    return model;
+  }
+  function ensure(page, signal) {
+    if (!page || signal?.aborted) return Promise.reject(aborted());
+    if (ready.has(page)) return Promise.resolve(page);
+    const previous = active.get(page);
+    if (previous && !previous.signal?.aborted) return previous.promise;
+    const route = window.ComicModelPacket?.(page.page);
+    if (!route || !window.crypto?.subtle) return Promise.reject(new Error('Verified page model loading unavailable'));
+    const job = {signal};
+    job.promise = (async () => {
+      let bytes = window.ComicNextPageWarmup?.packet(page, route.url.split('?')[0], route.sha256);
+      if (!bytes) {
+        const response = await fetch(route.url, {signal, cache:retry.has(page) ? 'reload' : 'force-cache'});
+        if (!response.ok) throw new Error('Page model HTTP error');
+        bytes = await response.arrayBuffer();
+      }
+      if (!bytes.byteLength || bytes.byteLength > 256 * 1024) throw new Error('Invalid page model size');
+      const checksum = await hash(bytes);
+      if (signal?.aborted || active.get(page) !== job) throw aborted();
+      if (checksum !== route.sha256) throw new Error('Page model checksum mismatch');
+      const record = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+      if (record.schemaVersion !== 1 || !record.page || identity.some(key => page[key] !== record.page[key])
+        || !Array.isArray(record.page.panels) || !Array.isArray(record.page.panelSources)) throw new Error('Page model does not match its original');
+      const verified = await verifiedPin(page, record);
+      if (signal?.aborted || active.get(page) !== job) throw aborted();
+      if (verified) pins.set(page, verified);
+      if (record.protectionResources) protectionResources.set(page, freeze(record.protectionResources));
+      page.panels = record.page.panels;
+      page.panelSources = record.page.panelSources;
+      ready.add(page);
+      retry.delete(page);
+      document.dispatchEvent(new CustomEvent('comic-page-model-ready', {detail:{page}}));
+      return page;
+    })().catch(error => {
+      if (error.name !== 'AbortError') retry.add(page);
+      throw error;
+    }).finally(() => { if (active.get(page) === job) active.delete(page); });
+    active.set(page,job);
+    return job.promise;
+  }
+  window.ComicPageModels = Object.freeze({ensure,inspect,isReady:page=>ready.has(page),pin,protection:page=>protectionResources.get(page)});
+})();
+  </script>
+  <style id="reader-recovery-layout">
+    .reader-topline { flex-wrap:wrap; }
+    #current-page-label, #retry-interaction { flex-shrink:0; }
+    #page-caption { flex:1 1 10rem; min-width:0; overflow-wrap:anywhere; }
+    #retry-interaction { min-height:36px; white-space:nowrap; }
+    @media(max-width:600px) { #retry-interaction { min-height:44px; } }
+  </style>
+  <style id="reader-tools-dialogs">
+    .directory-stories { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:12px 12px 0; }
+    .directory-story { display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:4px; min-width:0; min-height:112px; padding:7px 4px; color:inherit; font:inherit; border:1px solid var(--binding-ink,#534637); border-radius:9px 11px 8px 10px; background:var(--binding-paper,#fffdf4); }
+    .directory-story[aria-current="location"] { background:#fff1ac; box-shadow:0 0 0 1px var(--binding-ink,#534637); }
+    .directory-story img { display:block; width:40px; height:50px; object-fit:contain; border:1px solid #b5a98c; background:#fff; border-radius:2px; }
+    .directory-story-title { font-size:12px; line-height:1.2; font-weight:700; overflow-wrap:anywhere; }
+    .directory-story-range { font-size:11px; line-height:1.2; }
+    .reader-tools-card { max-height:min(65svh,460px); overflow:auto; }
+    #share-page,#report-page { min-height:44px; min-width:0; white-space:normal; overflow-wrap:anywhere; }
+    #reader-tool-status { position:absolute; z-index:20; bottom:calc(100% + 8px); inset-inline-end:0; width:max-content; max-width:min(280px,calc(100vw - 24px)); padding:8px 12px; border:1px solid var(--binding-ink,#534637); border-radius:9px; background:var(--binding-paper,#fffdf4); font-size:13px; box-shadow:0 3px 9px #30252030; }
+    #reader-tool-status[hidden] { display:none; }
+    dialog.reader-tool-dialog { box-sizing:border-box; width:min(460px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(82svh,660px); overflow:auto; border:2px solid var(--binding-ink,#534637); border-radius:13px 11px 15px 10px; background:var(--story-grain) left top / 160px 160px repeat,var(--binding-paper,#fffdf4); }
+    .reader-tool-dialog .dialog-header { gap:8px; padding:10px 12px; }
+    .reader-tool-dialog .dialog-header h2 { min-width:0; margin:0; font-size:18px; overflow-wrap:anywhere; }
+    .reader-tool-dialog button { min-height:44px; min-width:44px; font:inherit; white-space:normal; overflow-wrap:anywhere; }
+    .reader-tool-fields { padding:10px 12px 12px; font-size:14px; line-height:1.4; }
+    .reader-tool-fields p { margin:0 0 9px; }
+    .reader-tool-fields label { display:block; margin:10px 0 5px; font-weight:700; }
+    .reader-tool-fields textarea,.reader-tool-fields select { display:block; box-sizing:border-box; width:100%; min-width:0; max-width:100%; min-height:44px; padding:8px; border:1px solid #a89b80; border-radius:7px; color:inherit; background:#fffdf7; font:inherit; font-size:14px; overflow-wrap:anywhere; }
+    .reader-tool-fields textarea { resize:vertical; }
+    .reader-tool-fields textarea[readonly] { background:#f6f2e5; }
+    .reader-tool-dialog-actions { display:flex; justify-content:flex-end; margin:10px 0; }
+    #report-copy-status,#share-copy-status { margin:5px 0 0; font-size:13px; overflow-wrap:anywhere; }
+    @media(max-width:350px) { .directory-stories { gap:5px; padding-inline:10px; } .directory-story-title { font-size:11px; } }
+  </style>
+  <style id="reader-touch-gestures">
+    #page-viewport, #page-viewport .panel-host { touch-action:none; }
+  </style>
+  <style id="reading-details-style">
+    .directory-story-wrap { min-width:0; display:flex; flex-direction:column; gap:5px; }
+    .directory-story-wrap .directory-story { flex:1; width:100%; }
+    .chapter-continue { font-size:11px; line-height:1.25; overflow-wrap:anywhere; }
+    .chapter-from-start { min-height:44px; min-width:0; padding:5px 3px; font:inherit; font-size:11px; color:inherit; background:transparent; border:1px solid #b5a98c; border-radius:7px; overflow-wrap:anywhere; }
+    .book-header,.reader-toolbar,.reader-actions,footer,.help,.pending-note { transition:opacity 260ms ease; }
+    body.reading-tools-quiet .book-header,body.reading-tools-quiet .reader-actions,body.reading-tools-quiet footer,body.reading-tools-quiet .help,body.reading-tools-quiet .pending-note { opacity:.08; }
+    body.reading-tools-quiet .reader-toolbar { opacity:.35; }
+    body.reading-tools-quiet .book-header:focus-within,body.reading-tools-quiet .reader-toolbar:focus-within,body.reading-tools-quiet .reader-actions:focus-within,body.reading-tools-quiet footer:focus-within { opacity:1; }
+    @media(prefers-reduced-motion:reduce) { .book-header,.reader-toolbar,.reader-actions,footer,.help,.pending-note { transition:none; } }
+  </style>
+</head>
+<body>
+  <audio id="background-music" preload="none" loop></audio>
+  <div class="book-shell">
+    <header class="book-header">
+      <div class="brand-lockup">
+        <img class="book-mark" src="ui-assets/just-cuz-brand-mark.webp" width="144" height="144" alt="" decoding="async">
+        <img class="book-logo" src="ui-assets/just-cuz-title-640-v4.webp" width="640" height="213" alt="JUST CUZ" decoding="async" fetchpriority="low">
+        <div class="book-title"><p class="eyebrow">翻开今天的小故事</p><h1>会转动的故事书</h1></div>
+      </div>
+      <div class="header-corner">
+        <span class="stage-badge" hidden>一起转转看！</span>
+      <div class="music-controls" role="group" aria-label="背景音乐控制">
+        <button id="music-toggle" type="button" aria-label="开启背景音乐" aria-pressed="false">♫ 背景音乐</button>
+        <input id="music-volume" type="range" min="0" max="100" step="1" value="30" aria-label="背景音乐音量" hidden tabindex="-1" aria-hidden="true">
+        <span id="music-status" aria-live="polite">正在准备音乐</span>
+      </div>
+      </div>
+    </header>
+    <div class="book-meta">
+      <p class="intro">从合集首页出发，和 Mandy、Cuz 一起读完三个小故事。</p>
+      <div class="book-status" role="status"><span id="book-count">85 页故事</span><span class="separator" aria-hidden="true">·</span><span id="source-panel-count">独立拖动</span><span class="separator" aria-hidden="true">·</span><span id="dynamic-count">双击还原</span></div>
+
+    </div>
+
+    <nav class="reader-toolbar" aria-label="阅读导航">
+      <div class="chapter-picker">
+        <label class="sr-only" for="chapter-select">选择章节</label>
+        <select id="chapter-select" aria-label="选择章节"></select>
+      </div>
+      <div class="navigation-group">
+        <button id="prev-page" type="button" aria-label="上一页">← 上一页</button>
+        <form id="page-jump" class="page-jump">
+          <label for="page-number">第</label>
+          <input id="page-number" type="number" min="1" max="85" step="1" value="1" inputmode="numeric" aria-label="页码">
+          <span>/ 85 页</span><button type="submit" class="jump-button">前往</button>
+        </form>
+        <button id="next-page" type="button" aria-label="下一页">下一页 →</button>
+      </div>
+      <div class="chapter-group">
+        <label class="language-switch" for="reading-language"><span aria-hidden="true">✦</span><span class="sr-only">Language</span><select id="reading-language" aria-label="Language"><option value="zh">中文</option><option value="en">English</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="ru">Русский</option><option value="fr">Français</option></select></label>
+        <button id="open-directory" type="button">目录</button>
+      </div>
+    </nav>
+
+    <main>
+      <section class="reader" aria-label="完整漫画页">
+        <div class="reader-topline"><strong id="current-page-label">第 1 页</strong><span id="page-caption" role="status" aria-live="polite" data-state="loading">正在打开漫画…</span><span id="orbit-input-status" role="status" hidden></span><button id="retry-interaction" type="button" hidden>重新准备</button></div>
+        <div id="page-viewport" class="page-viewport" tabindex="0" aria-label="漫画阅读区，可放大后滚动查看">
+          <div id="viewport-inner" class="viewport-inner">
+            <div id="page-stage" class="page-stage">
+              <img id="page-image" alt="Just Cuz 第 1 页完整原画" draggable="false" decoding="async">
+              <div id="panel-layer" class="panel-layer"></div>
+            </div>
+          </div>
+          <div id="page-loading" class="page-loading" role="status">正在打开原页…</div>
+          <div id="page-error" class="page-error" hidden><p>这一页暂时没有打开，请重新尝试。</p><button id="retry-page" type="button">重新打开</button></div>
+        </div>
+        <div class="reader-actions">
+          <button id="fit-page" type="button">适合整页</button>
+          <button id="original-button" type="button">查看原画</button>
+          <button id="reset-panels" type="button" hidden>复位视角</button>
+          <details class="reader-tools">
+            <summary><span aria-hidden="true">⋯</span><span class="tools-name" lang="zh">更多阅读工具</span><span class="tools-name" lang="en">More reading tools</span><span class="tools-name" lang="ja">その他の読書ツール</span><span class="tools-name" lang="ko">더 많은 읽기 도구</span><span class="tools-name" lang="fr">Autres outils de lecture</span><span class="tools-name" lang="ru">Другие инструменты чтения</span></summary>
+            <div class="reader-tools-card">
+              <div class="zoom-controls" aria-label="缩放控制">
+                <button id="zoom-out" type="button" aria-label="缩小">−</button><output id="zoom-level" aria-live="polite">适合整页</output><button id="zoom-in" type="button" aria-label="放大">＋</button>
+              </div>
+              <button id="orbit-input" type="button" aria-pressed="false" hidden>手机转动</button>
+              <button id="focus-reading" type="button" aria-pressed="false">沉浸阅读</button>
+              <button id="bilingual-read" type="button" aria-haspopup="dialog" aria-controls="bilingual-dialog">译文</button>
+              <button id="share-page" type="button">分享这一页</button>
+              <button id="report-page" type="button" aria-haspopup="dialog" aria-controls="report-dialog">记录本页问题</button>
+              <button id="panel-sources-button" type="button" aria-haspopup="dialog" aria-controls="panel-sources-dialog" hidden>分格原画</button>
+            </div>
+          </details>
+          <output id="reader-tool-status" role="status" aria-live="polite" hidden></output>
+        </div>
+        <div id="panel-control-list" class="panel-control-list" hidden inert aria-hidden="true"></div>
+        <p id="page-progress" class="reading-note" aria-live="polite">第 1 / 85 页</p>
+      </section>
+      <p class="help">拖动一格，发现另一面 <span aria-hidden="true">✦</span> 松手缓缓停下 · 双击回到原画</p>
+      <p id="dynamic-note" class="pending-note">体验草稿：101 / 101 格已接入互动素材，画面仍在优化中。</p>
+
+    </main>
+    <footer><span class="footer-signature">JUST CUZ <span aria-hidden="true">✦</span> 魔法故事书 · 优化中</span><button id="book-about" type="button" aria-haspopup="dialog" aria-controls="book-about-dialog">阅读说明</button><span class="return-note">下次打开，接着这一页读</span></footer>
+  </div>
+
+  <dialog id="directory-dialog" class="directory-dialog" aria-labelledby="directory-title">
+    <div class="dialog-header"><h2 id="directory-title">三集故事 · 85 页</h2><button id="close-directory" type="button" aria-label="关闭目录">关闭</button></div>
+    <div id="directory-story-cards" class="directory-stories" aria-label="三个小故事"></div>
+    <div id="directory-content" class="directory-content"></div>
+  </dialog>
+  <dialog id="original-dialog" class="original-dialog" aria-labelledby="original-title">
+    <div class="dialog-header"><h2 id="original-title">第 1 页完整原画</h2><button id="close-original" type="button" aria-label="关闭原画">关闭</button></div>
+    <div class="original-image-wrap"><img id="original-image" alt="完整原画对照" decoding="async"></div>
+    <div class="original-footer"><span id="original-size"></span><a id="original-download" download>保存完整原画</a></div>
+  </dialog>
+  <dialog id="panel-sources-dialog" class="panel-sources-dialog" aria-labelledby="panel-sources-title" aria-describedby="panel-sources-note">
+    <div class="dialog-header"><div><p id="panel-sources-page" class="eyebrow"></p><h2 id="panel-sources-title">完整分格原画</h2></div><button id="close-panel-sources" type="button" aria-label="关闭分格原画">关闭</button></div>
+    <p id="panel-sources-note" class="panel-sources-note">这里保留每一格的完整原画和原文字，可以和互动视角一起看。</p>
+    <div id="panel-sources-gallery" class="panel-sources-gallery"></div>
+  </dialog>
+  <dialog id="book-about-dialog" class="directory-dialog" aria-labelledby="book-about-title"><div class="dialog-header"><h2 id="book-about-title">一起读故事</h2><button id="close-book-about" type="button">关闭</button></div><div class="directory-content"><p>左右拖动单格换视角，松手会缓缓停下。双击或按 Home 回到原画；放大后可在书页里移动阅读。</p><p>每一页静态和复位均保留完整原画。页面只准备当前页的互动，先打开轻量全角度预览，再补清晰画面。</p><p>本合集仍在优化中，部分环绕视角有人物和环境细节偏差。</p></div></dialog>
+  <dialog id="bilingual-dialog" class="bilingual-dialog" aria-labelledby="bilingual-text-title">
+    <div class="dialog-header"><h2 id="bilingual-text-title">本页双语文字</h2><button id="close-bilingual" type="button" aria-label="关闭双语文字">关闭</button></div>
+    <div id="bilingual-text-content"></div>
+  </dialog>
+  <dialog id="share-dialog" class="reader-tool-dialog" aria-labelledby="share-title">
+    <div class="dialog-header"><h2 id="share-title">分享这一页</h2><button id="close-share" type="button">关闭</button></div>
+    <div class="reader-tool-fields">
+      <p id="share-instruction">链接会保留当前页码和阅读语言。</p>
+      <textarea id="share-link" readonly rows="3" aria-labelledby="share-title" spellcheck="false"></textarea>
+      <div class="reader-tool-dialog-actions"><button id="copy-share-link" type="button">复制链接</button></div>
+      <p id="share-copy-status" role="status" aria-live="polite"></p>
+    </div>
+  </dialog>
+  <dialog id="report-dialog" class="reader-tool-dialog" aria-labelledby="report-title" aria-describedby="report-note">
+    <div class="dialog-header"><h2 id="report-title">记录本页问题</h2><button id="close-report" type="button">关闭</button></div>
+    <div class="reader-tool-fields">
+      <p id="report-note">这份记录留在你的浏览器里。复制后，可自行发送给制作方。</p>
+      <label id="report-category-label" for="report-category">问题类型</label>
+      <select id="report-category"><option value="loading">加载速度</option><option value="rotation">转动与操作</option><option value="text">文字与翻译</option><option value="other">其他</option></select>
+      <label id="report-description-label" for="report-description">补充说明（选填）</label>
+      <textarea id="report-description" rows="2" maxlength="600"></textarea>
+      <label id="report-preview-label" for="report-preview">问题记录预览</label>
+      <textarea id="report-preview" readonly rows="7" spellcheck="false"></textarea>
+      <div class="reader-tool-dialog-actions"><button id="copy-report" type="button">复制问题记录</button></div>
+      <p id="report-copy-status" role="status" aria-live="polite"></p>
+    </div>
+  </dialog>
+  <noscript>请允许浏览器运行脚本以使用分页导航。85 张完整原图也保存在 pages 文件夹中。</noscript>
+<script id="first-original-paint">
+(() => {
+  'use strict';
+  const preload = document.getElementById('current-page-original-preload');
+  const original = preload?.dataset.originalSource;
+  const preferred = preload?.getAttribute('href');
+  const pageNumber = Number(original?.match(/^pages\/page-(\d{3})\.jpg$/)?.[1]);
+  if (!pageNumber) return;
+  const image = document.getElementById('page-image');
+  const stage = document.getElementById('page-stage');
+  const viewport = document.getElementById('page-viewport');
+  const loading = document.getElementById('page-loading');
+  const caption = document.getElementById('page-caption');
+  const width = 1600;
+  const height = pageNumber === 37 ? 1999 : 2000;
+  const fit = () => {
+    const scale = Math.min(Math.max(1, viewport.clientWidth - 32) / width,
+      Math.max(1, viewport.clientHeight - 32) / height);
+    stage.style.width = Math.max(1, Math.round(width * scale)) + 'px';
+    stage.style.height = Math.max(1, Math.round(height * scale)) + 'px';
+  };
+  const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null;
+  const show = () => {
+    if (image.naturalWidth !== width || image.naturalHeight !== height) { fallback(); return; }
+    image.removeEventListener('load', show);
+    loading.hidden = true;
+    const firstLight=window.ComicReadingLight?.first;
+    if (firstLight?.page===pageNumber) window.ComicReadingLight.finish({page:pageNumber,source:original,sha256:firstLight.sha256,width,height});
+    caption.textContent = '原画可阅读，互动正在准备…';
+  };
+  const fallback = () => {
+    if (image.getAttribute('src') !== original) image.src = original;
+  };
+  window.ComicEarlyOriginal = (page, artwork) => {
+    delete window.ComicEarlyOriginal;
+    resize?.disconnect();
+    image.removeEventListener('load', show);
+    image.removeEventListener('error', fallback);
+    const shown = image.getAttribute('src');
+    return page.source === original && (shown === artwork || shown === original) && image.complete &&
+      image.naturalWidth === width && image.naturalHeight === height && loading.hidden ? shown : null;
+  };
+  fit();
+  resize?.observe(viewport);
+  document.getElementById('page-number').value = pageNumber;
+  document.getElementById('current-page-label').textContent = '第 ' + pageNumber + ' 页';
+  image.width = width;
+  image.height = height;
+  image.alt = 'Just Cuz 第 ' + pageNumber + ' 页完整原画';
+  const readingLight = window.ComicReadingLight;
+  const firstLight = readingLight?.first;
+  image.fetchPriority = firstLight ? 'low' : 'high';
+  if (firstLight?.page === pageNumber) {
+    const page = {page:pageNumber,source:original,sha256:firstLight.sha256,width,height};
+    const priorityFallback=setTimeout(() => { image.fetchPriority='high'; preload.fetchPriority='high'; },1500);
+    readingLight.show(page,0,stage).then(shown => {
+      clearTimeout(priorityFallback); image.fetchPriority='high'; preload.fetchPriority='high';
+      if (!shown || stage.dataset.targetPage && Number(stage.dataset.targetPage)!==pageNumber ||
+          stage.dataset.navigationState==='ready' || image.complete && image.naturalWidth===width && image.naturalHeight===height) return;
+      const hash=location.hash.match(/^#page=(\d+)$/);
+      if (hash && Number(hash[1])!==pageNumber) return;
+      const preview=document.getElementById('page-reading-preview');
+      if (!preview || !stage.contains(preview) || stage.dataset.readingPreviewPage!==String(pageNumber)) return;
+      loading.hidden=true;
+      let language=new URL(location.href).searchParams.get('lang');
+      try { language=language||localStorage.getItem('just-cuz-reading-language'); } catch (_) {}
+      const notes={zh:'轻量预览 · 原画正在打开…',en:'Reading preview · opening original…',ja:'プレビュー · 原画を読み込み中…',ko:'미리보기 · 원본을 여는 중…',ru:'Предпросмотр · загружаем оригинал…',fr:'Aperçu · ouverture de l’original…'};
+      caption.textContent=notes[language]||notes.zh;
+    });
+  }
+  image.addEventListener('load', show);
+  if (preferred !== original) image.addEventListener('error', fallback, {once:true});
+  image.src = preferred;
+})();
+
+</script>
+</body>
+</html>
