@@ -178,7 +178,9 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
   const failedPackets = new Set(), responsePackets = new WeakMap();
   const started = performance.now();
   let selected = externalHd ? (externalBases[0] || null) : local, settled = externalHd || bases.length === 1;
-  const cancelled = () => Object.assign(new Error('Asset request cancelled'), {name:'AbortError'});
+  const cancelled = () => Object.assign(new Error('Asset request cancelled'), {name:'AbortError', recoveryKind:'cancelled', recoveryRetryable:false});
+  const deliveryFailure = (message, kind, retryable, cause) => Object.assign(new Error(message),
+    {recoveryKind:kind, recoveryRetryable:retryable, ...(cause ? {cause} : {})});
   const stopBody = response => { try { if (response.body) void response.body.cancel().catch(() => {}); } catch (_) {} };
   async function probe(base, controller) {
     const timer = setTimeout(() => controller.abort(), 6000);
@@ -220,7 +222,8 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
     if (signal) signal.addEventListener('abort', abort, {once:true});
     // This timeout covers connection/headers only. Once streaming starts, slow
     // valid packets retain their existing lifecycle and caller cancellation.
-    const timer = setTimeout(abort, 8000);
+    let headerTimeout = false;
+    const timer = setTimeout(() => { headerTimeout = true; abort(); }, 8000);
     try {
       const p043Route = p043BoundPacketRoutes.get(source);
       const path = p043Route && p043Route.sha256 === checksum ? p043Route.url
@@ -230,11 +233,15 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
         ? await window.ComicEarlyPreview?.take(source, checksum, controller.signal) : null;
       const response = warmResponse || await fetch(new URL(path + '?sha256=' + checksum, base).href,
         {...init, signal:controller.signal, mode:'cors', credentials:'omit'});
-      if (!response.ok) { stopBody(response); throw new Error('Asset delivery HTTP ' + response.status); }
+      if (!response.ok) { stopBody(response); throw deliveryFailure('Asset delivery HTTP ' + response.status, 'http', response.status >= 500 && response.status <= 599); }
       responses.set(response, base);
       return response;
     } catch (error) {
       if (signal) signal.removeEventListener('abort', abort);
+      if (signal?.aborted) throw cancelled();
+      if (headerTimeout) throw deliveryFailure('Asset response headers timed out', 'header-timeout', true, error);
+      if (error?.recoveryKind) throw error;
+      if (error instanceof TypeError) throw deliveryFailure('Asset network transport failed', 'transport', true, error);
       throw error;
     } finally { clearTimeout(timer); }
   }
@@ -268,7 +275,10 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
       catch (error) {
         if (init.signal && init.signal.aborted) throw cancelled();
         last = error;
-        if (base !== local) disable(base);
+        // A transient packet failure keeps the reviewed fallback order, without
+        // changing the route for healthy sibling resources. Integrity failures
+        // still disable the offending mirror through markFailed below.
+        if (base !== local && error?.recoveryRetryable !== true) disable(base);
       }
     }
     failedPackets.add(packet);
@@ -278,10 +288,10 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
     disabled.add(base);
     if (selected === base) selected = externalHd ? (externalBases.find(candidate => !disabled.has(candidate)) || null) : local;
   }
-  function markFailed(response) {
+  function markFailed(response, {transient = false} = {}) {
     const base = responses.get(response), packet = responsePackets.get(response);
     if (packet) failedPackets.add(packet);
-    if (base && base !== local) disable(base);
+    if (base && base !== local && !transient) disable(base);
   }
   // Explicit reader retry starts a new attempt. Hash verification still happens
   // in the frame cache; no failed payload is accepted by clearing route state.
@@ -461,24 +471,70 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
     defer(() => { pumpScheduled = false; pumpDecodes(); pumpFetches(); });
   }
   function current(store, generation) { return !store.disposed && store.generation === generation; }
+  const recoveryFailure = (message, kind, cause) => Object.assign(new Error(message),
+    {recoveryKind:kind, recoveryRetryable:true, ...(cause ? {cause} : {})});
+  const recoveryCancelled = () => Object.assign(new Error('Automatic recovery cancelled'),
+    {name:'AbortError', recoveryKind:'cancelled', recoveryRetryable:false});
+  const retryable = error => error?.recoveryRetryable === true;
+  const recoveryAllowed = (store, generation) => current(store, generation)
+    && !document.hidden && navigator.onLine !== false && [...store.consumers].some(consumer => !consumer.disposed);
+  function recoveryState(consumer) {
+    const values = [...consumer.store.recoveryStates.values(), consumer.rangeRecoveryState];
+    return values.includes('retrying') ? 'retrying' : values.includes('exhausted') ? 'exhausted' : '';
+  }
+  function setRecovery(store, key, state) {
+    if (state) store.recoveryStates.set(key, state); else store.recoveryStates.delete(key);
+    for (const consumer of store.consumers) scheduleProgress(consumer);
+  }
+  function recoveryDelay(store, generation, signal, wanted = () => true) {
+    // Exactly one short backoff. Visibility/offline/ownership changes cancel it;
+    // no online/visibility listener ever starts a new request in the background.
+    return new Promise((resolve, reject) => {
+      let timer;
+      const finish = error => {
+        clearTimeout(timer); signal?.removeEventListener('abort', cancel);
+        document.removeEventListener?.('visibilitychange', check);
+        window.removeEventListener?.('offline', check);
+        store.recoveryCancels.delete(cancel);
+        error ? reject(error) : resolve();
+      };
+      const cancel = () => finish(recoveryCancelled());
+      const check = () => { if (!recoveryAllowed(store, generation) || signal?.aborted || !wanted()) cancel(); };
+      store.recoveryCancels.add(cancel);
+      signal?.addEventListener('abort', cancel, {once:true});
+      document.addEventListener?.('visibilitychange', check);
+      window.addEventListener?.('offline', check);
+      if (!recoveryAllowed(store, generation) || signal?.aborted || !wanted()) { cancel(); return; }
+      timer = setTimeout(() => {
+        if (!recoveryAllowed(store, generation) || signal?.aborted || !wanted()) cancel();
+        else finish();
+      }, 350);
+    });
+  }
+  async function transportRead(reader) {
+    try { return await reader.read(); }
+    catch (error) {
+      // Only native transport errors at the read boundary are transient. Parser,
+      // SHA, geometry and source-binding failures never enter this classifier.
+      if (error instanceof TypeError) throw recoveryFailure('Frame body transport failed', 'body-transport', error);
+      throw error;
+    }
+  }
   function clearPreviewIdle(request) {
     if (request.previewTimer != null && typeof clearTimeout === 'function') clearTimeout(request.previewTimer);
     request.previewTimer = null;
     request.previewTimerVersion = (request.previewTimerVersion || 0) + 1;
   }
   function armPreviewIdle(store, request, generation) {
-    if (!request.preview || request.previewIdleTimeout || !current(store, generation)
-      || store.preview.finished || store.preview.failed || typeof setTimeout !== 'function' || typeof clearTimeout !== 'function') return;
+    if (!request.pack || request.previewIdleTimeout || !current(store, generation)
+      || request.preview && (store.preview.finished || store.preview.failed) || typeof setTimeout !== 'function' || typeof clearTimeout !== 'function') return;
     clearPreviewIdle(request);
     const version = request.previewTimerVersion;
     request.previewTimer = setTimeout(() => {
-      if (version !== request.previewTimerVersion || !current(store, generation) || store.preview.finished || store.preview.failed) return;
-      request.previewTimer = null; request.previewIdleTimeout = true; store.preview.failed = true;
-      // Only a real stalled response disables a mirror. User/page aborts never do.
-      if (request.deliveryResponse && window.ComicAssetDelivery && typeof window.ComicAssetDelivery.markFailed === 'function') window.ComicAssetDelivery.markFailed(request.deliveryResponse);
-      const error = new Error('Preview body stalled for eight seconds');
-      for (const index of request.pack.indices) if (!store.preview.blobs.has(index)) store.preview.errors.set(index, error);
-      for (const consumer of store.consumers) scheduleProgress(consumer);
+      if (version !== request.previewTimerVersion || !current(store, generation) || request.preview && (store.preview.finished || store.preview.failed)) return;
+      request.previewTimer = null; request.previewIdleTimeout = true;
+      // The request loop owns the retry and final error publication. Verified
+      // partial rows stay usable while this one response is cancelled.
       request.controller.abort();
       if (request.reader) { try { void Promise.resolve(request.reader.cancel()).catch(() => {}); } catch (_) {} }
       schedulePump();
@@ -490,7 +546,8 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
     const previewFailed = preview ? Math.max(preview.errors.size, preview.failed ? 1 : 0) : 0;
     const complete = consumer.store.blobs.size === consumer.store.sequence.frameCount;
     const urgent = complete || preview && previewLoaded === preview.spec.indices.length && previewLoaded !== consumer.previewProgressLoaded
-      || consumer.store.errors.size > consumer.progressFailed || previewFailed > consumer.previewProgressFailed;
+      || consumer.store.errors.size > consumer.progressFailed || previewFailed > consumer.previewProgressFailed
+      || recoveryState(consumer) !== consumer.progressRecoveryState;
     // The initial callback stays asynchronous. Streamed rows then share one
     // update per animation frame; completion must also work in a hidden tab.
     if (consumer.progressScheduled) {
@@ -507,11 +564,13 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
         const preview = consumer.store.preview, loaded = consumer.store.blobs.size, failed = consumer.store.errors.size;
         const previewLoaded = preview ? preview.blobs.size : 0, previewTotal = preview ? preview.spec.indices.length : 0;
         const previewFailed = preview ? Math.max(preview.errors.size, preview.failed ? 1 : 0) : 0;
-        if (loaded !== consumer.progressLoaded || failed !== consumer.progressFailed || previewLoaded !== consumer.previewProgressLoaded || previewFailed !== consumer.previewProgressFailed) {
+        const autoRecoveryState = recoveryState(consumer);
+        if (loaded !== consumer.progressLoaded || failed !== consumer.progressFailed || previewLoaded !== consumer.previewProgressLoaded || previewFailed !== consumer.previewProgressFailed || autoRecoveryState !== consumer.progressRecoveryState) {
           consumer.progressLoaded = loaded;
           consumer.progressFailed = failed;
           consumer.previewProgressLoaded = previewLoaded; consumer.previewProgressFailed = previewFailed;
-          consumer.options.onProgress({loaded, failed, total:consumer.store.sequence.frameCount, previewLoaded, previewTotal, previewFailed});
+          consumer.progressRecoveryState = autoRecoveryState;
+          consumer.options.onProgress({loaded, failed, total:consumer.store.sequence.frameCount, previewLoaded, previewTotal, previewFailed, autoRecoveryState});
         }
       }
     };
@@ -558,10 +617,13 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
   }
   function publishBlob(store, index, blob, generation, preview = false) {
     if (!current(store, generation)) throw new Error('Frame store disposed');
-    (preview ? store.preview.blobs : store.blobs).set(index, blob);
+    const blobs = preview ? store.preview.blobs : store.blobs;
+    if (!blobs.has(index)) blobs.set(index, blob);
     const waiter = !preview && store.frameWaiters.get(index);
     if (waiter) { store.frameWaiters.delete(index); waiter.resolve(blob); }
     for (const consumer of store.consumers) {
+      // Another consumer's verified request can satisfy this exact target.
+      if (!preview && consumer.target === index) consumer.rangeRecoveryState = '';
       scheduleProgress(consumer);
       if (preview || consumer.target === index) scheduleRender(consumer);
     }
@@ -603,9 +665,9 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
     armPreviewIdle(store, request, generation);
     try {
       for (;;) {
-        const chunk = await reader.read();
+        const chunk = await transportRead(reader);
         if (!current(store, generation)) throw new Error('Frame store disposed');
-        if (request.previewIdleTimeout) throw new Error('Preview body stalled for eight seconds');
+        if (request.previewIdleTimeout) throw recoveryFailure('Frame pack body stalled for eight seconds', 'body-idle');
         if (chunk.done) break;
         if (!(chunk.value instanceof Uint8Array) || received + chunk.value.byteLength > pack.byteLength) throw new Error('Frame pack byte length mismatch');
         if (chunk.value.byteLength) armPreviewIdle(store, request, generation);
@@ -701,7 +763,9 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
         }
       }
       for (const request of store.requests.values()) {
-        // Previewless or failed-preview panels retain immediate HD fallback.
+        // A failed preview keeps its verified rows and explicit manual retry.
+        // Failure is never consent to download the queued complete HD set.
+        if (!request.preview && store.preview?.failed && demandOnly) continue;
         if (!request.preview && store.preview && !store.preview.failed && !store.preview.errors.size) {
           // A whole-pack fallback is limited to a live selected target. Queued
           // neighbors, frame0/reset and other panels never open a background set.
@@ -723,31 +787,45 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
     }
     return choice;
   }
-  function pumpFetches() {
-    while (fetchPending < MAX_FETCH_PENDING) {
-      const next = nextFetch();
-      if (!next) break;
-      const {store, request} = next, generation = store.generation;
-      request.started = true; request.controller = new AbortController(); fetchPending++;
-      Promise.resolve().then(() => {
-        if (!current(store, generation)) throw new Error('Frame store disposed');
+  async function fetchRequest(store, request, generation) {
+    const recoveryKey = `asset:${request.key}`;
+    for (;;) {
+      request.controller = new AbortController(); request.deliveryResponse = null; request.previewIdleTimeout = false;
+      try {
+        if (!current(store, generation)) throw recoveryCancelled();
         const init = {signal:request.controller.signal};
-        // The validated content hash gives revised packets a distinct HTTP
-        // cache key. Both whole-pack and per-frame checks still verify bytes.
-        if (request.pack) init.cache = 'force-cache';
-        const warmed = request.preview && request.pack && window.ComicNextPageWarmup?.preview(request.pack.source, request.pack.sha256);
-        if (warmed) return warmed;
-        if (request.pack && window.ComicAssetDelivery && typeof window.ComicAssetDelivery.fetch === 'function') return window.ComicAssetDelivery.fetch(request.pack.source, request.pack.sha256, init);
-        const source = request.pack ? `${request.pack.source}?sha256=${request.pack.sha256}` : store.sequence.frames[request.index];
-        return fetch(source, init);
-      }).then(response => {
+        if (request.pack) init.cache = store.recoveryTried.has(recoveryKey) ? 'reload' : 'force-cache';
+        let response;
+        try {
+          const warmed = request.preview && !store.recoveryTried.has(recoveryKey) && request.pack
+            && window.ComicNextPageWarmup?.preview(request.pack.source, request.pack.sha256);
+          if (warmed) response = warmed;
+          else if (request.pack && typeof window.ComicAssetDelivery?.fetch === 'function')
+            response = await window.ComicAssetDelivery.fetch(request.pack.source, request.pack.sha256, init);
+          else response = await fetch(request.pack ? `${request.pack.source}?sha256=${request.pack.sha256}` : store.sequence.frames[request.index], init);
+        } catch (error) {
+          if (error instanceof TypeError && !request.controller.signal.aborted)
+            throw recoveryFailure('Frame request transport failed', 'transport', error);
+          throw error;
+        }
         request.deliveryResponse = response;
-        if (!current(store, generation)) throw new Error('Frame store disposed');
-        if (!response.ok) throw new Error(`Frame ${request.pack ? 'pack' : 'image'} HTTP ${response.status}`);
-        if (request.pack && request.pack.frameBytes && response.body && typeof response.body.getReader === 'function') return streamPack(store, request, response, generation);
-        return request.pack ? response.arrayBuffer().then(buffer => unpack(store, request.pack, buffer)) : response.blob();
-      }).then(result => {
-        if (!current(store, generation)) throw new Error('Frame store disposed');
+        if (!current(store, generation)) throw recoveryCancelled();
+        if (!response.ok) throw Object.assign(new Error(`Frame ${request.pack ? 'pack' : 'image'} HTTP ${response.status}`),
+          {recoveryKind:'http', recoveryRetryable:response.status >= 500 && response.status <= 599});
+        let result;
+        if (request.pack && request.pack.frameBytes && response.body && typeof response.body.getReader === 'function')
+          result = await streamPack(store, request, response, generation);
+        else {
+          let body;
+          try { body = request.pack ? await response.arrayBuffer() : await response.blob(); }
+          catch (error) {
+            if (error instanceof TypeError && !request.controller.signal.aborted)
+              throw recoveryFailure('Frame body transport failed', 'body-transport', error);
+            throw error;
+          }
+          result = request.pack ? await unpack(store, request.pack, body) : body;
+        }
+        if (!current(store, generation)) throw recoveryCancelled();
         if (request.pack) {
           if (result) for (const [index, blob] of result) publishBlob(store, index, blob, generation, request.preview);
           if (request.preview) {
@@ -759,13 +837,37 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
           if (!result || result.size === 0) throw new Error('Frame image is empty');
           store.blobs.set(request.index, result);
         }
+        setRecovery(store, recoveryKey, '');
+        return;
+      } catch (caught) {
+        const error = request.previewIdleTimeout ? recoveryFailure('Frame pack body stalled for eight seconds', 'body-idle', caught) : caught;
+        clearPreviewIdle(request);
+        if (request.deliveryResponse && (retryable(error) || !request.controller.signal.aborted)
+          && typeof window.ComicAssetDelivery?.markFailed === 'function')
+          window.ComicAssetDelivery.markFailed(request.deliveryResponse, {transient:retryable(error)});
+        if (retryable(error) && !store.recoveryTried.has(recoveryKey) && recoveryAllowed(store, generation)) {
+          store.recoveryTried.add(recoveryKey); setRecovery(store, recoveryKey, 'retrying');
+          try { await recoveryDelay(store, generation); }
+          catch (_) { setRecovery(store, recoveryKey, ''); throw error; }
+          continue;
+        }
+        setRecovery(store, recoveryKey, retryable(error) && store.recoveryTried.has(recoveryKey) ? 'exhausted' : '');
+        throw error;
+      }
+    }
+  }
+  function pumpFetches() {
+    while (fetchPending < MAX_FETCH_PENDING) {
+      const next = nextFetch();
+      if (!next) break;
+      const {store, request} = next, generation = store.generation;
+      request.started = true; fetchPending++;
+      fetchRequest(store, request, generation).then(() => {
         request.resolve();
         for (const consumer of store.consumers) scheduleProgress(consumer);
       }).catch(error => {
-        if (request.deliveryResponse && !request.controller.signal.aborted && window.ComicAssetDelivery && typeof window.ComicAssetDelivery.markFailed === 'function') window.ComicAssetDelivery.markFailed(request.deliveryResponse);
-        if (current(store, generation)) {
-          // Independently verified payloads remain usable even if a later row or
-          // the final pack hash fails; never publish any unverified remainder.
+        if (current(store, generation) && error?.recoveryKind !== 'cancelled') {
+          // Keep all independently verified rows from either attempt.
           const blobs = request.preview ? store.preview.blobs : store.blobs, errors = request.preview ? store.preview.errors : store.errors;
           if (request.preview) store.preview.failed = true;
           for (const index of request.pack ? request.pack.indices : [request.index]) {
@@ -801,6 +903,8 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
     if (consumer.rangeTimer != null) clearTimeout(consumer.rangeTimer);
     consumer.rangeTimer = null;
     if (consumer.rangeController) consumer.rangeController.abort();
+    consumer.rangeRecoveryState = '';
+    scheduleProgress(consumer);
     consumer.rangeController = null; consumer.earlyRange = false;
   }
   const manualRangeLimit = 128 * 1024;
@@ -828,9 +932,9 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
   });
   function scheduleSettledRange(consumer) {
     const store = consumer.store, index = consumer.target;
-    if (consumer.rangeTarget === index && (consumer.rangeTimer != null || consumer.rangeController)) return;
+    if (consumer.rangeTarget === index && (consumer.rangeTimer != null || consumer.rangeController || consumer.rangeRecoveryState === 'exhausted')) return;
     cancelSettledRange(consumer); consumer.rangeTarget = index;
-    if (consumer.disposed || store.disposed || index === 0 || store.blobs.has(index) || store.rangeUnsupported
+    if (consumer.disposed || store.disposed || document.hidden || navigator.onLine === false || index === 0 || store.blobs.has(index) || store.rangeUnsupported
       || !store.preview || store.preview.failed || (!store.preview.finished && !allowEarlyManualRange(consumer,index))
       || !window.ComicAssetDelivery || typeof window.ComicAssetDelivery.fetchRange !== 'function') return;
     const pack = store.packByIndex && store.packByIndex[index], row = pack && pack.indices.indexOf(index);
@@ -840,7 +944,7 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
     consumer.earlyRange = !store.preview.finished;
     consumer.rangeTimer = setTimeout(() => {
       consumer.rangeTimer = null;
-      if (consumer.disposed || store.disposed || consumer.target !== index || store.blobs.has(index) || rangePending) return;
+      if (consumer.disposed || store.disposed || document.hidden || navigator.onLine === false || consumer.target !== index || store.blobs.has(index) || rangePending) return;
       const early = !store.preview.finished;
       if (early && !allowEarlyManualRange(consumer,index)) return;
       const controller = new AbortController(), generation = store.generation;
@@ -848,65 +952,96 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
       consumer.rangeController = controller; rangePending++;
       const offset = 12 + pack.indices.length * 8 + pack.frameBytes.slice(0,row).reduce((n,v) => n+v,0);
       const length = pack.frameBytes[row], end = offset + length - 1;
-      let timedOut = false, receivedFrame = false;
-      const rejectRange = () => { if (!early) store.rangeUnsupported = true; };
-      const timeout = setTimeout(() => { timedOut = true; controller.abort(); },8000);
-      Promise.resolve().then(() => window.ComicAssetDelivery.fetchRange(pack.source,pack.sha256,offset,end,{signal:controller.signal,cache:'force-cache'}))
-        .then(async result => {
-          if (!current(store,generation) || controller.signal.aborted) return;
+      let receivedFrame = false, invalid = false, failure = null;
+      const recoveryKey = `range:${index}`;
+      const wanted = () => !consumer.disposed && consumer.target === index && !store.blobs.has(index)
+        && (!early || allowEarlyManualRange(consumer, index));
+      const rejectRange = () => { invalid = true; if (!early) store.rangeUnsupported = true; };
+      async function attempt() {
+        let timedOut = false, result = null, reader = null, timer;
+        const bodyController = new AbortController();
+        const abort = () => bodyController.abort();
+        controller.signal.addEventListener('abort', abort, {once:true});
+        const arm = () => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; bodyController.abort();
+          if (reader) { try { void Promise.resolve(reader.cancel()).catch(() => {}); } catch (_) {} }
+        }, 8000); };
+        arm();
+        try {
+          result = await window.ComicAssetDelivery.fetchRange(pack.source,pack.sha256,offset,end,
+            {signal:bodyController.signal,cache:store.recoveryTried.has(recoveryKey)?'reload':'force-cache'});
+          if (timedOut) throw recoveryFailure('Frame range response timed out', 'body-idle');
+          if (!current(store,generation) || controller.signal.aborted || !wanted()) throw recoveryCancelled();
           if (!result) { rejectRange(); return; }
           const expectedRange = `bytes ${offset}-${end}/${pack.byteLength}`;
           if (result.status !== 206 || result.headers.get('Content-Range') !== expectedRange) {
-            rejectRange();
-            try { if(result.body) await result.body.cancel(); } catch (_) {}
-            return;
+            rejectRange(); try { if(result.body) await result.body.cancel(); } catch (_) {} return;
           }
           let raw;
           if (result.body && typeof result.body.getReader === 'function') {
-            const reader=result.body.getReader(), bounded=new Uint8Array(length);let received=0,complete=false;
+            reader=result.body.getReader(); const bounded=new Uint8Array(length);let received=0,complete=false;
             try {
               for (;;) {
-                const chunk=await reader.read();
-                if (controller.signal.aborted || !current(store,generation)) throw new Error('Frame range cancelled');
+                const chunk=await transportRead(reader);
+                if (timedOut) throw recoveryFailure('Frame range body stalled for eight seconds', 'body-idle');
+                if (controller.signal.aborted || !current(store,generation) || !wanted()) throw recoveryCancelled();
                 if (chunk.done) break;
                 if (!(chunk.value instanceof Uint8Array) || received+chunk.value.byteLength>length) throw new Error('Frame range overflow');
+                if (chunk.value.byteLength) arm();
                 bounded.set(chunk.value,received);received+=chunk.value.byteLength;
               }
               if (received!==length) throw new Error('Frame range truncated');
               complete=true;raw=bounded.buffer;
             } finally {
-              if(!complete)try{await reader.cancel();}catch(_){}
+              if(!complete)try{void Promise.resolve(reader.cancel()).catch(()=>{});}catch(_){}
               try{reader.releaseLock();}catch(_){}
             }
           } else raw=await result.arrayBuffer();
-          if (!current(store,generation) || controller.signal.aborted) return;
+          if (timedOut) throw recoveryFailure('Frame range body stalled for eight seconds', 'body-idle');
+          if (!current(store,generation) || controller.signal.aborted || !wanted()) throw recoveryCancelled();
           if (raw.byteLength !== length || !webpPayload(new Uint8Array(raw)) || await digest(store,raw) !== pack.frameSha256[row]) {
-            rejectRange();
+            rejectRange(); return;
+          }
+          if (current(store,generation) && !controller.signal.aborted && wanted()) {
+            publishBlob(store,index,new Blob([raw],{type:'image/webp'}),generation);
+            store.lastVerifiedRange = index; receivedFrame = true;
+          }
+        } catch (error) {
+          if (timedOut && !controller.signal.aborted) throw recoveryFailure('Frame range stalled for eight seconds', 'body-idle', error);
+          throw error;
+        } finally { clearTimeout(timer); controller.signal.removeEventListener('abort', abort); }
+      }
+      (async () => {
+        for (;;) {
+          try { await attempt(); consumer.rangeRecoveryState = ''; scheduleProgress(consumer); return; }
+          catch (error) {
+            if (retryable(error) && !store.recoveryTried.has(recoveryKey) && recoveryAllowed(store,generation) && !controller.signal.aborted && wanted()) {
+              store.recoveryTried.add(recoveryKey); consumer.rangeRecoveryState = 'retrying'; scheduleProgress(consumer);
+              try { await recoveryDelay(store,generation,controller.signal,wanted); }
+              catch (_) { consumer.rangeRecoveryState = ''; scheduleProgress(consumer); return; }
+              continue;
+            }
+            failure = error;
+            consumer.rangeRecoveryState = retryable(error) && store.recoveryTried.has(recoveryKey) && !controller.signal.aborted ? 'exhausted' : '';
+            scheduleProgress(consumer);
+            // A transient failure preserves the usable preview and does not
+            // trigger a whole-pack fallback. A manual retry owns a fresh store.
+            if (!retryable(error) && error?.recoveryKind !== 'cancelled' && !controller.signal.aborted && current(store,generation)) rejectRange();
             return;
           }
-          if (current(store,generation) && !controller.signal.aborted) {
-            publishBlob(store,index,new Blob([raw],{type:'image/webp'}),generation);
-            store.lastVerifiedRange = index;
-            receivedFrame = true;
-          }
-        }).catch(() => {
-          // Optional fast path never turns a valid whole-packet load into a
-          // failed panel or disables its route. Normal integrity checks remain.
-          if (!controller.signal.aborted && current(store,generation)) rejectRange();
-        }).finally(() => {
-          clearTimeout(timeout); rangePending--;
-          if ((timedOut || !controller.signal.aborted) && current(store,generation)) {
-            if (!early || receivedFrame) {
-              if (!store.rangeTried) store.rangeTried = new Set();
-              store.rangeTried.add(index);
-            } else if (consumer.manualTarget === index) consumer.manualTarget = null;
-            if (timedOut && !early) store.rangeUnsupported = true;
-            if (store.rangeUnsupported) armFullPacks(store, 0);
-          }
-          if (consumer.rangeController === controller) { consumer.rangeController = null; consumer.earlyRange = false; }
-          schedulePump();
-          for (const activeStore of stores.values()) for (const other of activeStore.consumers) scheduleSettledRange(other);
-        });
+        }
+      })().finally(() => {
+        rangePending--;
+        if (!controller.signal.aborted && current(store,generation)) {
+          if (!early || receivedFrame || failure) {
+            if (!store.rangeTried) store.rangeTried = new Set();
+            store.rangeTried.add(index);
+          } else if (consumer.manualTarget === index) consumer.manualTarget = null;
+          if (invalid && store.rangeUnsupported) armFullPacks(store, 0);
+        }
+        if (consumer.rangeController === controller) { consumer.rangeController = null; consumer.earlyRange = false; }
+        schedulePump();
+        for (const activeStore of stores.values()) for (const other of activeStore.consumers) scheduleSettledRange(other);
+      });
     },120);
   }
 
@@ -1111,6 +1246,8 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
     clearTimeout(store.bulkTimer);
     clearTimeout(store.seekTimer);
     store.disposed = true; store.generation++;
+    for (const cancel of [...store.recoveryCancels]) cancel();
+    store.recoveryStates.clear();
     if (stores.get(store.key) === store) stores.delete(store.key);
     for (const [key, entry] of lru) if (entry.store === store) { entry.bitmap.close(); lru.delete(key); }
     for (const request of store.requests.values()) {
@@ -1147,7 +1284,7 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
       const completeHD = warm && warm.blobs.size === sequence.frameCount;
       const preview = !completeHD && previewSequence ? {spec:warm && warm.preview ? warm.preview.spec : previewSequence,
         blobs:new Map(warm && warm.preview ? warm.preview.blobs : []), errors:new Map(), finished:!!(warm && warm.preview), failed:false} : null;
-      store = {key, id:++serial, sequence, preview, packByIndex, lastVerifiedRange:warm?.lastVerifiedRange ?? null, subtle:sequence.packs ? window.crypto.subtle : null, generation:0, disposed:false, consumers:new Set(), blobs:warm ? new Map(warm.blobs) : new Map(), frameWaiters:new Map(), requests:new Map(), pending:new Set(), errors:new Map()};
+      store = {key, id:++serial, sequence, preview, packByIndex, recoveryTried:new Set(), recoveryStates:new Map(), recoveryCancels:new Set(), lastVerifiedRange:warm?.lastVerifiedRange ?? null, subtle:sequence.packs ? window.crypto.subtle : null, generation:0, disposed:false, consumers:new Set(), blobs:warm ? new Map(warm.blobs) : new Map(), frameWaiters:new Map(), requests:new Map(), pending:new Set(), errors:new Map()};
       stores.set(key, store);
       if (preview && preview.finished) armFullPacks(store, 3500);
       if (preview && !preview.finished) void enqueueRequest(store, preview.spec.pack.source, -2, 0, preview.spec.pack, true).catch(() => {});
@@ -1159,7 +1296,7 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
         for (const pack of sequence.packs) if (!pack.indices.every(index => store.blobs.has(index))) void enqueueRequest(store, pack.source, 2, pack.indices[0], pack).catch(() => {});
       } else for (let index = 0; index < sequence.frameCount; index++) void requestBlob(store, index, 2).catch(() => {});
     }
-    const consumer = {store, canvas, context, options, editorialFraming:window.ComicPanelPlayer?.editorialViewFraming?.(panel,page)||null, verifiedSparseRGBA:(window.ComicPanelPlayer?.isTransparentStompLayer(panel,page)===true || window.ComicPanelPlayer?.isTransparentCryLayer(panel,page)===true), target:0, actualIndex:-1, actualPreview:false, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false, progressFrame:null, progressVersion:0, progressLoaded:-1, progressFailed:-1, previewProgressLoaded:-1, previewProgressFailed:-1, manualTarget:null, earlyRange:false, manualPageEpoch};
+    const consumer = {store, canvas, context, options, editorialFraming:window.ComicPanelPlayer?.editorialViewFraming?.(panel,page)||null, verifiedSparseRGBA:(window.ComicPanelPlayer?.isTransparentStompLayer(panel,page)===true || window.ComicPanelPlayer?.isTransparentCryLayer(panel,page)===true), target:0, actualIndex:-1, actualPreview:false, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false, progressFrame:null, progressVersion:0, progressLoaded:-1, progressFailed:-1, progressRecoveryState:null, rangeRecoveryState:'', previewProgressLoaded:-1, previewProgressFailed:-1, manualTarget:null, earlyRange:false, manualPageEpoch};
     store.consumers.add(consumer);
     function setPercent(percent) {
       if (consumer.disposed || !Number.isFinite(Number(percent))) return;
@@ -1203,6 +1340,18 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
     // Includes cache hits: no callback can run until the caller has assigned its handle.
     scheduleProgress(consumer); requestDemand(consumer); scheduleRender(consumer); schedulePump();
     return Object.freeze({canvas, setPercent, reset, destroy,
+      // An explicit manual retry starts a fresh budget for only this failed
+      // angle. Keep the shared store and every healthy consumer/canvas alive.
+      get rangeRecoveryExhausted() { return consumer.rangeRecoveryState === 'exhausted'; },
+      retryFailedRange() {
+        if (consumer.disposed || consumer.rangeRecoveryState !== 'exhausted'
+          || !store.preview?.finished || store.preview.failed || !recoveryAllowed(store, store.generation)) return false;
+        const index = consumer.target;
+        store.recoveryTried.delete(`range:${index}`); store.rangeTried?.delete(index);
+        consumer.rangeRecoveryState = ''; consumer.rangeTarget = null;
+        scheduleProgress(consumer); scheduleSettledRange(consumer); schedulePump();
+        return true;
+      },
       settleManual() {
         if (consumer.disposed || !demandOnly || consumer.store.preview?.finished) return;
         consumer.manualTarget = consumer.target;
@@ -2432,7 +2581,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       const state = loadFailed || !cacheReady() && (videoFailed || seekFailed) ? 'error' : seekReady() ? 'ready' : 'loading';
       const targetIndex = frameTargetPercent === null ? null : Math.min(m.frameCount - 1, Math.max(0, Math.floor(frameTargetPercent / 100 * m.frameCount + 1e-9)));
       const anglePending = !!(inFlight || desired !== null || !framePlaybackBlocked && frameRenderer && !frameFailed && targetIndex !== null && targetIndex !== lastFrameIndex);
-      const detail = {panelId:panel.id, regionId:region ? region.id : null, interactionState:state, loadedFrames, totalFrames:m.frameCount, loadingFailed:frameLoadFailed, previewLoaded, previewTotal, previewFailed, previewReady, previewActive, anglePending};
+      const detail = {panelId:panel.id, regionId:region ? region.id : null, interactionState:state, autoRecoveryState:host.dataset.autoRecoveryState || '', loadedFrames, totalFrames:m.frameCount, loadingFailed:frameLoadFailed, previewLoaded, previewTotal, previewFailed, previewReady, previewActive, anglePending};
       Object.assign(host.dataset, {interactionState:state, loadedFrames:String(loadedFrames), totalFrames:String(m.frameCount), loadingFailed:String(frameLoadFailed), previewLoaded:String(previewLoaded), previewTotal:String(previewTotal), previewFailed:String(previewFailed), previewReady:String(previewReady), previewActive:String(previewActive), anglePending:String(anglePending)});
       const status = JSON.stringify(detail);
       if (status === lastStatus) return;
@@ -2536,7 +2685,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
         updateActual();
         if (ready) {
           notice.textContent = frameLoadFailed ? '部分环绕角度加载中断，已打开的画面仍可查看。请重新准备。' : videoMessage || (!seekReady() ? '当前浏览器尚不能拖动这段视频。可播放，或用本地预览入口重新打开。' : '');
-          retry.hidden = !videoMessage && !frameLoadFailed;
+          retry.hidden = !videoMessage && !frameLoadFailed && host.dataset.autoRecoveryState !== 'exhausted';
         }
         if (videoSeekReady() && desired !== null && !inFlight) issueSeek();
         tryStartPlayback();
@@ -2732,8 +2881,17 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       updateAvailability();
     }
     function prepareFailedRetry() {
-      if (disposed || host.dataset.interactionState !== 'error' && host.dataset.loadingFailed !== 'true') return null;
-      if (frameRenderer && (frameLoadFailed || frameFailed || previewFailed > 0)) {
+      if (disposed || host.dataset.interactionState !== 'error' && host.dataset.loadingFailed !== 'true' && host.dataset.autoRecoveryState !== 'exhausted') return null;
+      if (host.dataset.autoRecoveryState === 'exhausted' && frameRenderer?.rangeRecoveryExhausted === true
+        && typeof frameRenderer.retryFailedRange === 'function') {
+        return () => {
+          if (disposed || !frameRenderer?.retryFailedRange?.()) return;
+          delete host.dataset.autoRecoveryState;
+          frameLoadFailed = false; videoMessage = ''; retry.hidden = true;
+          updateAvailability();
+        };
+      }
+      if (frameRenderer && (frameLoadFailed || frameFailed || previewFailed > 0 || host.dataset.autoRecoveryState === 'exhausted')) {
         const target = frameTargetPercent !== null ? frameTargetPercent : displayTime() / displayDuration() * 100;
         pause();
         clearTimeout(seekDispatch); seekDispatch = null; seekDispatchStarted = 0;
@@ -2746,6 +2904,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
         const old = frameRenderer;
         frameRenderer = null;
         old.destroy(); old.canvas.remove();
+        delete host.dataset.autoRecoveryState;
         frameFailed = false; frameLoadFailed = false; loadedFrames = 0;
         previewLoaded = 0; previewTotal = 0; previewFailed = 0;
         previewReady = false; previewActive = false; frameMode = false;
@@ -2836,7 +2995,9 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
             previewLoaded = actual.previewLoaded; previewTotal = actual.previewTotal;
             previewFailed = Number.isInteger(actual.previewFailed) && actual.previewFailed >= 0 ? actual.previewFailed : 0;
           }
-          frameLoadFailed = loadedFrames < m.frameCount && failed > 0;
+          if (actual.autoRecoveryState === 'retrying' || actual.autoRecoveryState === 'exhausted') host.dataset.autoRecoveryState = actual.autoRecoveryState;
+          else delete host.dataset.autoRecoveryState;
+          frameLoadFailed = loadedFrames < m.frameCount && (failed > 0 || actual.autoRecoveryState === 'exhausted');
           updateAvailability();
         },
         onFrame(actual) {
@@ -3296,7 +3457,10 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       return bytes ? new Response(bytes, {status:200, headers:{'Content-Type':'application/octet-stream'}}) : null;
     }});
     window.ComicNextPageWarmup = api;
-    return {start, take, discard, navigate() { if (job) job.controller.abort(); job = null; }};
+    return {start, take, discard,
+      has(page) { return !!(job && job.page.id===page.id && job.page.sha256===page.sha256); },
+      suspend() { if (job && !job.complete) discard(); },
+      navigate() { if (job) job.controller.abort(); job = null; }};
   }
   const interactionWarmup = createInteractionWarmup();
 
@@ -3304,7 +3468,8 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   // fast link. A bounded verified preview may follow without starting a player.
   function createOriginalWarmup() {
     const connection = navigator.connection;
-    let direction = 1, timer = null, entry = null, attempted = false, blocked = false;
+    let direction = 1, timer = null, entry = null, attempted = false, blocked = false, attempts = 0, resumable = false;
+    const pointers = new Set();
     const stopTimer = () => { clearTimeout(timer); timer = null; };
     const discard = (keepInteraction = false) => {
       stopTimer();
@@ -3314,23 +3479,24 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       entry.image.removeAttribute('src'); entry = null;
     };
     function usablePage() {
-      if (!loaded || document.visibilityState !== 'visible' || document.querySelector('dialog[open]') ||
+      if (!loaded || pointers.size || document.body.dataset.pageGesture === 'pinch' || document.visibilityState !== 'visible' || document.querySelector('dialog[open]') ||
           !connection || connection.saveData || connection.effectiveType !== '4g' ||
           !Number.isFinite(connection.downlink) || connection.downlink <= 2.25) return false;
       const hosts = [...panelLayer.querySelectorAll('.panel-host:not([data-background-only="true"])')];
       return hosts.length > 0 && hosts.every(({dataset:d}) =>
-        d.interactionState === 'ready' && d.loadingFailed !== 'true' && d.anglePending !== 'true' &&
+        d.interactionState === 'ready' && d.loadingFailed !== 'true' && d.anglePending !== 'true' && d.autoRecoveryState !== 'retrying' &&
         (d.renderMode === 'video' || Number(d.totalFrames) > 0 && Number(d.loadedFrames) >= Number(d.totalFrames) ||
           d.previewReady === 'true' && Number(d.previewTotal) > 0 && Number(d.previewFailed) === 0 &&
           Number(d.previewLoaded) >= Number(d.previewTotal)));
     }
     function queue() {
-      if (blocked || attempted || timer !== null || entry || !usablePage()) return;
+      if (blocked || attempted || attempts >= 2 || timer !== null || entry && interactionWarmup.has(entry.page) || !usablePage()) return;
       const token = loadToken;
       timer = setTimeout(() => {
         timer = null;
         if (token !== loadToken || blocked || attempted || !usablePage()) return;
-        attempted = true;
+        attempted = true; attempts++;
+        if (entry?.complete) { void interactionWarmup.start(entry.page); return; }
         const page = pages[current + direction - 1];
         if (!page || !Number.isSafeInteger(page.bytes) || page.bytes < 1 || page.bytes > 512 * 1024) return;
         const artwork = window.ComicReadingArtwork?.(page.source, page.sha256) || page.source;
@@ -3340,22 +3506,48 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
         img.onload = () => {
           if (entry !== item) return;
           if (img.naturalWidth !== page.width || img.naturalHeight !== page.height) { item.failed = true; discard(); }
-          else if (usablePage()) void interactionWarmup.start(page);
+          else { item.complete = true; if (usablePage()) void interactionWarmup.start(page); }
         };
         img.onerror = () => { if (entry === item) { item.failed = true; discard(); } };
         img.src = artwork;
       }, 1000);
     }
-    function interrupt() { blocked = true; discard(); }
+    // A drag suspends optional work only while the current page is busy.
+    // At most one interrupted restart is allowed per page, so repeated gestures
+    // cannot create an unbounded speculative transfer loop.
+    function interrupt(allowResume = false) {
+      blocked = true; resumable = allowResume; stopTimer();
+      interactionWarmup.suspend();
+      // Retain completed immutable bodies. They no longer compete with the
+      // current angle and can be adopted without transferring them a second time.
+      if (entry && !entry.complete) discard();
+    }
+    function settled() {
+      if (pointers.size) return;
+      blocked = false;
+      if (resumable && attempts < 2) attempted = false;
+      resumable = false;
+      queue();
+    }
     panelLayer.addEventListener('pointerdown', event => {
-      if (event.target.closest('.panel-host')) interrupt();
+      if (event.target.closest('.panel-host')) { pointers.add(event.pointerId); interrupt(true); }
     }, {capture:true, passive:true});
+    for (const name of ['pointerup','pointercancel','lostpointercapture']) document.addEventListener(name,event => {
+      if (pointers.delete(event.pointerId)) settled();
+    }, {capture:true,passive:true});
     document.addEventListener('comic-page-previews-ready', queue);
+    // Current angle/HD completion emits panel status; queue only once all
+    // current previews and the requested angle have become usable again.
+    panelLayer.addEventListener('comic-panel-status', queue);
+    document.addEventListener('comic-hd-budget-change', queue);
+    document.addEventListener('comic-page-gesture-change', () => {
+      if (document.body.dataset.pageGesture === 'pinch') interrupt(true); else settled();
+    });
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState !== 'visible') discard(); else queue();
+      if (document.visibilityState !== 'visible') { pointers.clear(); interrupt(); } else settled();
     });
     connection?.addEventListener?.('change', () => { discard(); if (usablePage()) queue(); });
-    window.addEventListener('pagehide', interrupt);
+    window.addEventListener('pagehide', () => interrupt());
     return Object.freeze({
       take(page, artwork) {
         stopTimer();
@@ -3372,7 +3564,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       navigate(number) {
         discard(true); interactionWarmup.navigate();
         if (loadToken > 0 && number !== current) direction = Math.sign(number - current);
-        attempted = false; blocked = false;
+        attempted = false; blocked = false; attempts = 0; resumable = false; pointers.clear();
       }
     });
   }
@@ -3983,18 +4175,19 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     tag.setAttribute('role','status'); tag.setAttribute('aria-live','polite'); tag.setAttribute('aria-atomic','true');
     stage.append(tag);
     const messages = {
-      zh:['正在翻到第 {n} 页…','第 {n} 页尚未打开'],
-      en:['Opening page {n}…','Page {n} could not open'],
-      ja:['{n}ページを開いています…','{n}ページを開けませんでした'],
-      ko:['{n}쪽을 여는 중…','{n}쪽을 열 수 없어요'],
-      ru:['Открываем страницу {n}…','Страница {n} не открылась'],
-      fr:['Ouverture de la page {n}…','La page {n} ne s’est pas ouverte']
+      zh:['正在翻到第 {n} 页…','第 {n} 页尚未打开','第 {n} 页轻量预览 · 原画正在打开…'],
+      en:['Opening page {n}…','Page {n} could not open','Page {n} preview · opening original…'],
+      ja:['{n}ページを開いています…','{n}ページを開けませんでした','{n}ページのプレビュー · 原画を読み込み中…'],
+      ko:['{n}쪽을 여는 중…','{n}쪽을 열 수 없어요','{n}쪽 미리보기 · 원본을 여는 중…'],
+      ru:['Открываем страницу {n}…','Страница {n} не открылась','Предпросмотр страницы {n} · загружаем оригинал…'],
+      fr:['Ouverture de la page {n}…','La page {n} ne s’est pas ouverte','Aperçu de la page {n} · ouverture de l’original…']
     };
     let generation = 0, target = 0, phase = 'idle';
     function refresh(event) {
       if (phase === 'idle') return;
       const language = event?.detail?.language || window.ComicLocaleUI?.language || $('reading-language')?.value || 'zh';
-      tag.textContent = (messages[language] || messages.en)[phase === 'error' ? 1 : 0].replace('{n}',target);
+      tag.textContent = (messages[language] || messages.en)[phase === 'error' ? 1 : phase === 'preview' ? 2 : 0].replace('{n}',target);
+      if (phase === 'preview') { $('page-caption').textContent=tag.textContent; tag.hidden=true; }
     }
     document.addEventListener('comic-language-change',refresh);
     return Object.freeze({
@@ -4004,6 +4197,10 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
         stage.dataset.navigationGeneration = String(token); stage.dataset.navigationDirection = direction;
         stage.setAttribute('aria-busy','true');
         refresh(); tag.hidden = false;
+      },
+      preview(token, number) {
+        if (generation !== token || target !== number || phase !== 'loading') return;
+        phase = 'preview'; refresh();
       },
       ready(token, number) {
         if (generation !== token) return;
@@ -4122,6 +4319,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     navigationSnapshot = previousSheet;
     const page = pages[number - 1];
     window.ComicEarlySourceMasks?.cancelUnless(page.source, page.sha256);
+    window.ComicReadingLight?.cancelUnless(page);
     let artwork = window.ComicReadingArtwork?.(page.source,page.sha256) || page.source;
     const earlyReady = loadToken === 0 && window.ComicEarlyOriginal?.(page,artwork);
     if (typeof earlyReady === 'string') artwork = earlyReady;
@@ -4166,6 +4364,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       if (token !== loadToken || configSignal.aborted || originalSettled) return;
       originalSettled = true;
       loaded = true; renderedPage = number;
+      window.ComicReadingLight?.finish(page);
       if (image.getAttribute('src') !== artwork) image.src = artwork;
       image.width = page.width; image.height = page.height;
       image.alt = `Just Cuz 第 ${current} 页完整原画`;
@@ -4200,7 +4399,20 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       return;
     }
     imageLoader = warmedOriginal || new Image();
-    imageLoader.fetchPriority = 'high'; imageLoader.decoding = 'async';
+    const lightPending = !warmedOriginal && window.ComicReadingLight?.pending(page);
+    imageLoader.fetchPriority = lightPending ? 'low' : 'high'; imageLoader.decoding = 'async';
+    if (lightPending) {
+      const priorityFallback=setTimeout(() => {
+        if (token===loadToken && !configSignal.aborted) imageLoader.fetchPriority='high';
+      },1500);
+      configSignal.addEventListener('abort',() => clearTimeout(priorityFallback),{once:true});
+      window.ComicReadingLight.show(page,token,stage).then(shown => {
+      clearTimeout(priorityFallback);
+      if (token !== loadToken || configSignal.aborted || originalSettled) return;
+      imageLoader.fetchPriority = 'high';
+      if (shown) navigationFeedback.preview(token,number);
+      });
+    }
     imageLoader.width = page.width; imageLoader.height = page.height;
     const failArtwork = () => {
       if (token !== loadToken || configSignal.aborted) return;
@@ -4210,6 +4422,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
         return;
       }
       frameConfigController.abort();
+      window.ComicReadingLight?.cancel();
       cancelNavigationMotion(); navigationFeedback.error(token);
       image.hidden = true; $('page-loading').hidden = true; $('page-error').hidden = false;
       panelLayer.setAttribute('aria-busy', 'false');
@@ -4218,7 +4431,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     };
     imageLoader.onload = () => {
       if (token !== loadToken || configSignal.aborted) return;
-      if (artwork !== page.source && (imageLoader.naturalWidth !== page.width || imageLoader.naturalHeight !== page.height)) {
+      if (imageLoader.naturalWidth !== page.width || imageLoader.naturalHeight !== page.height) {
         failArtwork();
         return;
       }
@@ -4323,13 +4536,51 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   if (!layer || window.ComicPanelLoading) return;
   const records = new Map(), panels = new Map(), draggedPanels = new Set();
   const phone = window.matchMedia('(max-width:650px)');
+  // Ship with the reader so cached HTML and its older stylesheet receive the same small tabs.
+  const paperStyle = document.createElement('style');
+  paperStyle.id = 'comic-panel-loading-paper-style';
+  paperStyle.textContent = `
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state]:not([hidden]) {
+      position:absolute; left:var(--badge-right); top:var(--badge-bottom); width:max-content;
+      max-width:min(var(--badge-width), 176px); min-width:0; min-height:0;
+      transform:translate(-100%,-100%); display:flex; align-items:center; justify-items:initial;
+      box-sizing:border-box; gap:5px; padding:4px 7px; opacity:1;
+      border:1px solid #987c46; border-radius:8px 3px 3px 8px;
+      color:#49371f; background:#fff3d9; box-shadow:0 1px 3px #4e351e35;
+      text-align:left; font-weight:700; line-height:1.2; pointer-events:none;
+    }
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state]:not([hidden]) .panel-loading-label {
+      display:block; min-width:0; overflow-wrap:anywhere; white-space:normal; overflow:visible;
+      text-overflow:clip; color:inherit; font-size:11px; line-height:1.25; letter-spacing:0;
+    }
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state]:not([hidden]) .panel-loading-number {
+      display:block; flex:none; color:#624416; font-size:12px; line-height:1.1;
+    }
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state] .panel-loading-hint,
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state] .panel-loading-number[hidden] { display:none; }
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state="ready"]:not([hidden]) {
+      background:#fff6df; opacity:.9;
+    }
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state]:not([hidden])::before { content:none; }
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state="ready"]:not([hidden])::before {
+      content:"↔" / ""; flex:none; font-size:12px; line-height:1;
+    }
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state="error"]:not([hidden]) {
+      color:#713d2e; border-color:#b5755e; background:#fff1e8;
+    }
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-tiny="true"][data-state="loading"]:not([hidden]) .panel-loading-label { display:none; }
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-tiny="true"][data-state]:not([hidden]) { padding:3px 5px; gap:3px; }
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][hidden] { display:none; }
+    #retry-interaction { min-width:44px; min-height:44px; }
+  `;
+  document.head.append(paperStyle);
   const panelKey = host => `${host.dataset.sourcePanelId}:${host.dataset.interactionRegion || ''}`;
   let queued = false, destroyed = false;
   function text(key, values = {}) {
     const selector = document.getElementById('reading-language');
     const language = window.ComicLocaleUI ? window.ComicLocaleUI.language : selector && selector.value || 'zh';
     const dictionary = window.COMIC_UI_STRINGS && (window.COMIC_UI_STRINGS[language] || window.COMIC_UI_STRINGS.en);
-    const fallback = {loadScene:'这个画面',loadError:'加载暂时中断',loadPreview:'环绕预览加载中',loadHD:'高清画面加载中',loadOrbit:'环绕画面加载中',loadRetry:'请点击页面上方「重新准备」',loadFirst:'先准备全角度小预览，再补充高清',loadDrag:'可拖动试看',loadTab:'加载中',loadTry:'左右拖动看看',loadDragHD:'预览可拖动，高清加载中',loadLast:'正在准备最后的画面，请稍候',loadWait:'完成后拖动更流畅，请稍候',loadDescription:'{title}，{label} {percent}%，{hint}'};
+    const fallback = {loadScene:'这个画面',loadError:'加载暂时中断',loadPreview:'环绕预览加载中',loadHD:'高清画面加载中',loadOrbit:'环绕画面加载中',loadRetry:'请点击页面上方「重新准备」',loadFirst:'先准备全角度小预览，再补充高清',loadDrag:'可拖动试看',loadTab:'加载中',loadTry:'左右拖动看看',loadDragHD:'预览可拖动，高清加载中',loadLast:'正在准备最后的画面，请稍候',loadWait:'完成后拖动更流畅，请稍候',loadRecovering:'自动重试中',loadRecoveryHint:'正在重新准备，请稍候',loadDescription:'{title}，{label} {percent}%，{hint}'};
     return String(dictionary && dictionary[key] || fallback[key] || key).replace(/\{(\w+)\}/g,(_,name) => values[name] == null ? '' : String(values[name]));
   }
   const positive = value => Number.isFinite(value) && value > 0;
@@ -4415,38 +4666,37 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   function update(host, record) {
     const data = host.dataset, loaded = Math.max(0, Number(data.loadedFrames) || 0), total = Number(data.totalFrames);
     const videoMode = data.renderMode === 'video';
-    const interrupted = data.loadingFailed === 'true' && !(videoMode && data.interactionState === 'ready');
-    // The player's ready state already verifies decode, protection and the full MP4 seek range.
-    const complete = !interrupted && data.interactionState === 'ready' && (videoMode || positive(total) && loaded >= total);
-    // One decoded row can make the player draggable, but only full preview coverage earns the quiet badge.
+    // One decoded row can make the player draggable. Only verified full preview coverage earns the invitation.
     const previewTotal = Number(data.previewTotal), previewLoaded = Number(data.previewLoaded || 0), previewFailed = Number(data.previewFailed || 0);
-    const previewReady = data.previewReady === 'true' && data.interactionState === 'ready'
+    const previewReady = data.frameReady !== 'fallback' && data.previewReady === 'true' && data.interactionState === 'ready'
       && positive(previewTotal) && Number.isFinite(previewLoaded) && previewLoaded >= previewTotal && previewFailed === 0;
-    const previewPhase = data.frameReady !== 'fallback' && Number(data.previewTotal) > 0 && Number(data.previewFailed || 0) === 0 && !loaded
-      && (!previewReady || Number(data.previewLoaded || 0) < Number(data.previewTotal));
-    let fraction = previewPhase ? Number(data.previewLoaded || 0) / Number(data.previewTotal) : positive(total) ? loaded / total : 0;
+    const interrupted = data.loadingFailed === 'true' && !previewReady && !(videoMode && data.interactionState === 'ready');
+    // The player owns protected-image readiness and complete MP4 seek-range validation.
+    const complete = !interrupted && data.interactionState === 'ready' && (videoMode || positive(total) && loaded >= total);
+    const usable = previewReady || complete;
+    const previewPhase = data.frameReady !== 'fallback' && positive(previewTotal) && previewFailed === 0;
+    let fraction = previewPhase ? previewLoaded / previewTotal : positive(total) ? loaded / total : 0;
     if (videoMode && !previewPhase && (!loaded || data.frameReady === 'fallback')) fraction = videoFraction(record.video);
-    const percent = complete ? 100 : Math.min(99, Math.max(0, Math.floor(fraction * 100)));
-    const state = data.interactionState === 'error' || interrupted ? 'error' : complete ? 'ready' : 'loading';
-    const quietPreview = !complete && previewReady;
-    const deferredHD = quietPreview && state !== 'error' && !!window.OrbitFrameCache?.isDemandOnly();
-    const gyroReady = document.body.dataset.orbitInput === 'gyro' && (previewReady || complete);
-    const mobileDrag = state !== 'error' && phone.matches && (previewReady || complete) && !gyroReady;
+    const percent = usable ? 100 : Math.min(99, Math.max(0, Math.floor(fraction * 100)));
+    const recovering = !usable && data.autoRecoveryState === 'retrying';
+    const state = usable ? 'ready' : recovering ? 'loading' : data.interactionState === 'error' || interrupted ? 'error' : 'loading';
+    const gyroReady = document.body.dataset.orbitInput === 'gyro' && usable;
     const title = text('loadScene');
-    const label = text(state === 'error' ? 'loadError' : mobileDrag ? 'loadTry' : phone.matches ? 'loadTab' : quietPreview ? 'loadDrag' : previewPhase ? 'loadPreview' : 'loadOrbit');
-    const hint = text(state === 'error' ? 'loadRetry' : quietPreview ? 'loadDragHD' : previewPhase ? 'loadFirst' : percent === 99 ? 'loadLast' : 'loadWait');
-    const description = mobileDrag || deferredHD ? label : text('loadDescription',{title,label,percent,hint});
-    if (record.number.textContent !== `${percent}%`) record.number.textContent = `${percent}%`;
+    const label = text(state === 'error' ? 'loadError' : usable ? 'loadTry' : recovering ? 'loadRecovering' : 'loadTab');
+    const hint = text(state === 'error' ? 'loadRetry' : recovering ? 'loadRecoveryHint' : previewPhase ? 'loadFirst' : percent === 99 ? 'loadLast' : 'loadWait');
+    const description = usable ? label : state === 'error' ? `${title}，${label}。${hint}` : text('loadDescription',{title,label:text(recovering ? 'loadRecovering' : previewPhase ? 'loadPreview' : 'loadOrbit'),percent,hint});
+    // Neither visible nor accessible text mixes quiet HD completion with preview preparation.
+    const numberText = usable || state === 'error' ? '' : `${percent}%`;
+    if (record.number.textContent !== numberText) record.number.textContent = numberText;
+    record.number.hidden = !numberText;
     if (record.label.textContent !== label) record.label.textContent = label;
-    if (record.hint.textContent !== hint) record.hint.textContent = hint;
+    if (record.hint.textContent !== (usable ? '' : hint)) record.hint.textContent = usable ? '' : hint;
     if (record.badge.dataset.state !== state) record.badge.dataset.state = state;
-    if (record.badge.dataset.previewUsable !== String(quietPreview)) record.badge.dataset.previewUsable = String(quietPreview);
-    if (record.badge.dataset.hdOnDemand !== String(deferredHD)) record.badge.dataset.hdOnDemand = String(deferredHD);
+    if (record.badge.dataset.previewUsable !== String(previewReady)) record.badge.dataset.previewUsable = String(previewReady);
+    record.badge.dataset.preparationPhase = usable ? 'ready' : recovering ? 'retrying' : state === 'error' ? 'error' : previewPhase ? 'preview' : 'media';
     if (record.badge.getAttribute('aria-label') !== description) record.badge.setAttribute('aria-label', description);
     if (record.badge.title !== description) record.badge.title = description;
-    const mobileState = mobileDrag ? 'drag' : 'progress';
-    if (record.badge.dataset.mobileState !== mobileState) record.badge.dataset.mobileState = mobileState;
-    const hidden = state !== 'error' && (gyroReady || (mobileDrag ? draggedPanels.has(panelKey(host)) : complete || deferredHD && record.badge.dataset.tiny === 'true'));
+    const hidden = usable && (gyroReady || draggedPanels.has(panelKey(host)));
     if (record.badge.hidden !== hidden) record.badge.hidden = hidden;
   }
   function remove(record) {
@@ -4478,6 +4728,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       if (!record) {
         const badge = document.createElement('output');
         badge.className = 'panel-loading-percent';
+        badge.dataset.paperTab = 'true';
         badge.setAttribute('aria-live', 'off');
         badge.dataset.sourcePanelId = host.dataset.sourcePanelId;
         if (host.dataset.interactionRegion) badge.dataset.interactionRegion = host.dataset.interactionRegion;
@@ -4534,6 +4785,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     document.removeEventListener('comic-hd-budget-change', queue);
     document.removeEventListener('comic-page-model-ready', registerCurrentModel);
     for (const record of records.values()) remove(record);
+    paperStyle.remove();
     records.clear();
     if (window.ComicPanelLoading === api) delete window.ComicPanelLoading;
   }});
@@ -4762,6 +5014,8 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
     panelDragLabel:['第 {n} 页，第 {panel} 格，左右拖动只转动这个小画面，双击或按 Home 还原原画','Page {n}, panel {panel}. Drag left or right to turn this view; double-click or press Home to reset.','{n}ページ、{panel}コマ目。左右にドラッグして回転。ダブルクリックか Home で原画へ。','{n}쪽, {panel}칸. 좌우로 드래그하여 이 화면을 돌려요. 두 번 클릭하거나 Home을 누르면 원화로 돌아가요.','Страница {n}, кадр {panel}. Тяните влево или вправо для вращения. Двойной щелчок или Home — оригинал.','Page {n}, case {panel}. Faites glisser à gauche ou à droite pour tourner cette vue. Double-clic ou Home pour rétablir.'],
     text:['译文','Text','本文','본문','Текст','Texte'],
     textTitle:['第 {n} 页 · 原文与译文','Page {n} · Story text','{n}ページ · 本文と原文','{n}쪽 · 본문과 원문','Страница {n} · Текст и оригинал','Page {n} · Texte et original'],
+    loadRecovering:["自动重试中","Retrying automatically","自動で再試行中","자동으로 다시 시도 중","Повторяем автоматически","Nouvelle tentative automatique"],
+    loadRecoveryHint:["正在重新准备，请稍候","Preparing again; please wait","もう一度準備しています。お待ちください","다시 준비 중이에요. 잠시 기다려 주세요","Готовим заново. Подождите","Nouvelle préparation, un instant"],
     loadScene:['这个画面','This panel','このコマ','이 칸','Этот кадр','Cette case'],
     loadError:['加载暂时中断','Loading interrupted','読み込みが中断しました','로딩 중단됨','Загрузка прервана','Chargement interrompu'],
     loadPreview:['环绕预览加载中','Loading orbit preview','回転プレビューを読み込み中','회전 미리보기 로딩 중','Загрузка предпросмотра','Chargement de l’aperçu'],

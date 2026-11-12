@@ -33,6 +33,106 @@
           const route = routes[source];
           return route?.[0] === checksum ? route[1] : source;
         };
+
+        // The phone reading layer is a technical resize, never an original.
+        // Canonical JPEGs alone feed lettering, source protection and players.
+        const lightRows = [["3d83cbd23b6ebc001129955b97b8bfcd6756fed32642c58a55b5c31cc33905a9","b534ada3ceeb6175c736c251f61b9f23eda7a45de79babc4680096c6b6488ea3",151136],["b4127143f65a2790de7021cdee0e6ced448f0d0bb71d7e66f92bcef650517724","0d591c4723619a59ca92d204c76de6e7f73517c2cdfc9acb989ddb63dbbb667b",118864],["d2abb879bd7271f8465cc8ab0540b1ab1019bdf995e02ac4e69bddc870a1f235","f405c94826634136197c45a018118b368080a2c369b9dc6332332f712a616641",130674],["3d8b7535c5bd7aedb508d2632b005910c188f14f746ba19cfd39cf1f1e6db823","8d010d2ba763975aee0dec605523688b50ede613394abb47b8e3efd9739f211e",187758],["1a0cf95e756558bb78063be628a7f45e39e0fcb96a2c1840c842ade390aa419f","a47b79ae804bacf04f314cf2de702466e5c30b8dfb941d93b889982622df7fa4",120944],["e8be9fcc042278e4ab2170b7b013226caee025f9db681fc202065c64893cb696","56c501d58db564413aa144d62533f3badbfbb84d9c960ea0e096ae9bad6843be",124876],["b1238ff07e4cbb9a5d5474e4beea6a6f8b35833499550309f57e6afe81dfbc41","f8883fe1bc7d454dfcd3d69baab6bc7ef5085cc6c79c979202be114dc601bfc6",134698],["cf937b6784caf26771c0b2346a4bb1cd3effb797b915e8c7214199fc2191398d","7ea422a336a2037ad90897155740b95080a74aa4d4a1aab182e4e1c983ec8541",88414],["5898120a6752a1e9c6da051403666242e5867628f67dd15725c578846958ffe1","7eab351cd98235e2a9d629093b13ff03fc6468e8b958eba7ed45fe86754c619d",91162],["9646e485789e337cc0f21f96ab212dd7bb46eaa4b93666bbc3b3b7a86a8ba070","0581e8f07d9e0f514c68171c01144d04aafd6e2621912c9bf3c5c52feb95c817",128576],["d1e38bcf348b8a1d5e7360e980191ce116c50d660e13b69ff58e561f8e3e0ed4","c6aa58a3076ad5624f985df73d31a3acaada1da851db25fd42ce192925ee7797",178952],["399588d1d1dc6df20d20ef21da5e262101fa210c2717642beb111b8c78d06caa","56f635186ca14d03902088a16e1cbb1f26324c88ebde2226a11c44144c545c35",166468],["d0f3c3861ad1cf09a11d687939811900bec9636ec9a9a478e9888b518939dafb","05f9448bcd40213672b1eed8e744f78369af74a6f1e310e9ba896a00cc33b614",110510],["d54451a154ee9fecacced539013ed6ae5c56f41533d0d487e80d4bdf280b0030","d6f06f65705f7aeac4d1ede594b6d9d55771e4263d11a1e94a9fb39afa15fea2",129198],["5898120a6752a1e9c6da051403666242e5867628f67dd15725c578846958ffe1","7eab351cd98235e2a9d629093b13ff03fc6468e8b958eba7ed45fe86754c619d",91162],["f03270316c1babf9a6e06ca5384122aea1c4dc286c4d3330a734f96e85f37ef3","c2c7dc4c18821eb9c486c1a46055a4993d287d793f8440314b36a3753d957a98",115630],["dc7f3f269ef5f429e6c852c62b3e9b32db37333659a71971c424d8c0f1643d11","6bb20b2d67af53d8a497c5723b615c62cb652322cd47716b7a15cda4064856a8",133996],["28fcbdebca3dc4f8f2ddbb55266e1c8ed18466db3f1f91561a374bc71942ad87","d4ca1d25e230cefbad6fe99b4186f80b21fd7ea7da355bd64a58897f7d79736c",178378],["192a5d0335141ceeeac3a3ecfafecca018836c428e1e0cc7d6da04dcf86cdf63","6a996e914cb1b3de018a05404015844dab6fea759c314bf2942b3ba2ace69abe",169388],["3f6e7a41c84c3659bb611ef463e688f208506bcd2ce8542d858116cc64e4061d","941f5eac0e5d6ecd9bdb320cdc0dac3f1618b35bad403e9a00f8521c2a4757dc",134672],["2f22c8f6ad2d1a1dfcb5f397ff003175e3d4369bba91787130d65185f3d386f7","4db01639f22968e385e19a5cf4364962acc2c51686e5e7a396f7ec95d14b05af",130718],["5a38acd0aa191531fcdd75b979e9b105c0d78a6241df34b38bbd4f6217916a64","128103fb53d358cb8f64f50357af77899e83302a2a304937a756cad62ed83fa8",126750],["f990ba8c6f80ec0e3eafcf863a191e58fe67caf584fb1ef91f7e68b2aa45f334","912254867d0c98996b98d451736722777a78c32d5be6e90cefa2fd4c8d3f481f",158222],["885f278eab0c73f439fcc645a1740c616c0fa02e021dc2f8943134c0ab176c00","64607bb907ab69dcb7bd8f80b5741d165d0110f24aaa45ac925e892ab6c2758a",128982],["c1c27db4206884d4f535e01a572a5ff6a27081d9d1e5e813e144fb92ca849152","1e131955f6120828cdc28ef8ad70c069c5635c7845bb17b9fcd2953b56384360",188888],["433517bca3a12ca97d682bb316ac9e8ce920553bf3a43b83fef32ce0ff79d80c","d1ac0242d1c51686c5b8f8dfc593700403d58092da4b19568007af72e60c4f68",179026],["8bd95fb3a1c5743e10941779a773effcba4ce4b46c35f9dcaeef8afcc8ab5ef9","63cde5f742dabc765288a5ea0345fe1bfdf5bff9aaf7dfae63d64d80ac504d84",185038],["52af737b4422a4d8f957f08cd9b082352461a2c4c70a8166fad8f521a5d936b8","26697310e9885be0d9b3f3c06080a9c08c2ff208a91dbbe006bf628a6b019086",135524],["244d4056452a6c71db40ae5902ced6c8f79c3e60547d5b29406ca941c58a65c2","e53d84b50792a21a92cf5821711f293df1dde467cf9c783cbbd95d2af60e14b2",156652],["88fa5702dae64d1590ffdbffa425651a17f1fdc994641e88e96aa03213fc6fbc","99b8c29c0af9fe6a190e855dd496896fc9ee50bbb29c5ca065fd4bf4167bab55",119114],["72c9233a78318aebd868b85afc810a4b5c88c8f1c7ae993703651ce0b930909b","e0d436384b6714f9608494f4a3bbea54d4481fa58fec0f70e0f8729211cd9995",75510],["3e356f31b92da31bf6eb235188f8c72ea38e02239f52fa5060d88a4db0fdc365","3709c62ff2aa7beb3531522a0b4ad471567467de98f06969924f031a93fa9a35",136370],["6b1c5cc8e98bd9035e3ded0855f165b7c745e9ba3be7bc52c01146847ac18eff","d99e2c1d46d10db9fda2de28c4d05429f79dd17864f37f04bc853bfb540484a1",215942],["6d2bce1343bbad77cea279d32cfa8437809e5ff91f28209e37c4b7b5752d009c","67a1cd3f1f1d3dde79d0a00ef38c855d2777ec66886e0a3bfa333cc2d5b279f7",150504],["d2ae2625b99bf326adedf6528804ac19af9e17dd22561576aad3bc3a37a239e5","15693d122e89afc7157469cb2b6ebd84d0de2f5170788217447b874a2e459c5b",141862],["dc56169a31e908893108629be6ca203a645179e6be4a1663b394130c81a68fa6","b28f6032c544cd9097c2f1a58b44a024d798c2f1e8256c4235a236809e0e0eb3",110228],["0d5779bef787ea954ff4cb248719b0b7dca1857869c4fb77c4b0207808503a6d","a8690f9b9b6de2d33c0371a1b310da8991e8ebe7280cd08fdb29fa1c4c83a3d4",107584],["720078cba7982a2e6bcaba5bd9acd976649feea7a70ea59124c418fd409a87d7","73f27a26569813787aaa83a74fd55f7e052bb011b35e6629de7c63c288332a9e",154716],["dea7d74f84665d733b19e61f75766a9d253f290a373d32f2d6b7e0e2a30db9d4","a9edd418376248aae14005757e447f530b3cb6b62f4cc9b17732f9bd24d04b82",139924],["4b8f3158e2981a78a296406c692fcbb2b2c7550470fabf5c4b780663ec54a786","90550235e5acf0d545700c8b2c4d3a88baa212bfe6ed01cb3617a4e66aa4a703",137878],["e42c89766e016cd241bf1c8f030f9487891eba305cea09d3a758a0f113326b53","b35831c0527a631109bf186ebf7498a61b2dd30aed578778fe9b913c8aebc51e",87832],["f317a437cd04f0f6f85c7dafa967b325e8e5e53d4f4fd0fbe3ffdb6f95e69da7","8469fab016640d2ddba4e18dbcb9a365d70d34aa6017f4124083f62374c18ff2",84494],["b0a798f850f00db76ab4b7d33fd31803522141aeec83fcbe59711b90dac79685","7448f8392ae1d951817f6e369de441a8bde50b950b1c43e38f553608f44964c4",125600],["4fd3ea1f0f9ea76602bac26f2b9dc275424ab5fa5c3be2f9222374d520eff047","b18ccd72b956b105d4a9400cf86c29c40dd948582e8878b995a2fc91b6f28d33",166664],["9a574ade8f92d604a92592cf96d6bf2acefac16b808491743fe714fcadd7d7eb","a5a8294242079fc3f9950fcbdc11454cf3d8a6038e491d9f2f4a22d011d4e77e",141472],["a15a6f4cdc6a750004f3c3549aaf0d4cef42fab426209a62ce5a1ccff4003dca","098c304fb5da08b015e92f8dff91a524a42bd938dc2aa2c875b00e85b72c0311",107702],["f317a437cd04f0f6f85c7dafa967b325e8e5e53d4f4fd0fbe3ffdb6f95e69da7","8469fab016640d2ddba4e18dbcb9a365d70d34aa6017f4124083f62374c18ff2",84494],["fa57cd4dea07ac7eb802e964fa47855511da971439bd6931e574a6b371f6e6f6","4a530c8c753d16014a44876400f5a99ffa5f5297a6aadfc2bf9bcdfaa4eaf195",145426],["0cba9ec5d51e79ad33ca09b1198cfa4d5b4ab0181c1c1842c303ff2f4ca8c42f","3756bf03ec0061519b28d157d643c13ce844d446ef3227136689a4c324eab7fa",127370],["77988fb66855daa0df2b78b70008f2482771eb2294c98b67880119db6f263c19","2c493909eaf3ff9d0d99aa32288d5e71c903f6db116b6f5fbe16981ddeaf2b5a",132014],["47504706dace8144a08ad69ccd731ef5764caebc6571f857be16895b3794e02b","7673b4541ecd0f58e0b1b727f8f29266a2c82b15d6b813b7a9eeb748cf0ecbb3",84516],["be7f84a44f343c71fe38ca148b78059273faddf3c7f5a552fb92bb3edb892d62","4cdb49936bf7b6c91f2a631f4c7f4c1011fffee56532172ad21f833d95c9477c",109880],["834cf97e5c12e12b48c4296a4e8fb37c78d6149120ab12e874d59ea82d9c0ced","639acf9e900c483ab3bda9d7092f2b419d3b71e21223c53b2ad85ff4cd8ab48c",146832],["d40960c7747bad553b50caaf01d6f7e0448cc225e9943359901a9c41eac2207f","d8b08cf31b7e92ae646e3c6919cd34cf91d249d7e0c55c8dcf5b19c663d45cc0",116704],["d87b53abe7d2a9b5f09482d682e788d0e243726af557264c3fa41df8edb36029","4943722d3c31e940cb3c6e43cab8084f278633a2a95796101becf5657362984e",111028],["ce3c81c2d5fdfa1dd406be3a84c42676e773ab906263059e3ae3a969499a75a1","89a55057c4ac833d774bb560b58ca502d0ba07d077fc6d82fb9ca128824c4587",143750],["215b0cc03d4cab0ad117ef396e3d9caee1bd2a7b78ba1b1693629d030f4dcd42","405c675907eb02ee8eadaef3a216acb952d8b507d7d7ebc134228fbaf9938b9d",56528],["efdff9096debf2473d6ba296671b3983c44bb8e15d6f01bb6140ff19d876de13","8dd01ac720055be52c400cd8eead1dab3ecf16faa0c7a2efd1bab204301be2ce",66398],["f73e6dbe62fb70c86878d76304edc9b90e4eb49a127a12cf04702093e6b29d36","5ffecdd7de012c44c8db7bae15a411effb872eb9392e74917238e89bf28da9d3",152208],["ee5171964728793b33d7fb454b40fca7e7cef4901c203bb54515ec9d509a74a9","30fb1fb3b05bc1990b274463ca689f86e533f05e62f85b51a5e42b16b545988b",124460],["6fd676ad9236c517276da7ef978f476f1354c1867da664ea73f2a73247714fde","ef3c1c9bb0ee6f0385cde7e7f72ca3cb6d2ec0349c0585ab73bfe83c5ce2bba8",108960],["75f589e58d0a0cad6c059c6048b6b0910b9bcffdec4e1e5690535e606c133d0b","8efcd15b751124d4c6d99fd15fd601548ca8d3142bd037e0fa3aa5208899f079",146942],["af8c6fe431624bc7260f376b163e54025bbc5540fb74026f32f29825d01d101a","3a716097b9699d8a79b5b12dc323b2e1e93706cb798d010ffa0f0adbf7938838",134180],["76644a524b88a088883bb81f8f1efa7e71ab5674623a1e19d114279fc4537072","8a449740d7fd2501e1f9ee37feb148ab197ce14153438ec9fd38bcbbc24c9285",161380],["e868b08f2f9c9ca7d0f4b3330e649c5970dfecd3b2a92b78767737762b5aff3e","60e0726913f4cd7fbfac28e38a4d3188b78d7f4f580a56a26d76bc1a2a6aa374",84356],["9179d8a69daf8dab57453db107db57d3b1cfb1ba4efb420b0bf7f52c0e34364a","3c71535b1fd146f8dba76430a89849717dcd866a894079aa713b5d8373a246bf",86602],["f98f82de9e1e1600916404826b414854c5f267c75ebe635715a382d308ce95ba","6a5cbfd36567d319922978dc85dc2bd4b2043eb847f42ab1fca8b5006d5e0445",143494],["e362fd9663c5d63fa41d0fb332fbf841eb7e739b629513a255005ff090f77129","00f3134813aec231fab2f5c054e0567cbd565dd9c773b706b5f6086e93883d90",137308],["ea022af0c5bd71d772b977d39916d74b607e47b583df24021cf926ffe2b07fb6","65a95036bdcf421ff55f971049079078faa4c0535c1cc7d4afc47c75b7277914",154558],["e3dd752bac87c731b169f718e9a2bcc8f570d17b46780d9afa1c8b9ff85bdbe7","97d5bced01d4f92242d880972366cab514b0fd3ae30debe06162f0f8919eb4fe",91258],["d3282431e3c2248c2377838e3a240715414622c81e48a797c63eddcb9166e278","aa2aebee3f8814e8c52512d8ba906603574a6c2b68be8c18067d0e4e697e0313",99774],["9179d8a69daf8dab57453db107db57d3b1cfb1ba4efb420b0bf7f52c0e34364a","3c71535b1fd146f8dba76430a89849717dcd866a894079aa713b5d8373a246bf",86602],["815440655c6202a55e9ce738cdf537666a5cc80ea28e7d9234020cc21bd9bdca","f3a85f2194c1e508c2c175330f3d82fc5f503c55f083cc908199c38e2fca742f",131100],["37e2b084f146f01c2ce52e6853d401329d39c21051f7cf3f525d3ee76955b06a","08dc7b4416f1a8a178b70e76b4b2ec9ef083df13bfc6f7091087add3750a7d69",128864],["fa3314e2f5700c49735adcb9f544426e627a9a06cf612e66b301a9ff742db062","714dc1395df9ce3e47553deb6f8e0ead7627f4b9f930f8a90c8dd29150aa5e02",123590],["50783628898cc61adb7b49de359f260b0ab0c6144c70d6f45dbe02cf7167a78a","cceb388607b2d68af088b6dc57757f91148582225d7480c3b481ea9128b860d7",85036],["0b0eaf03dc06e390bf1b664292048cb975e56c165f6bbd6631fd73c78ba76193","57b52de4a3a8506b13687fb37468a83d48dfe98dcacdb4837252d6fdfa1a500e",132032],["5eda866e5e8b7b23aa44756753f7d1de17145aec4d4caca39250b4485d6619ba","6b90105d5875d1cc6bc278724995a9e27678500f9e0af3c42a605c87a6eb94f2",160142],["ae696ac6b53f1896e16f794cf9ff836f375441181f7be212a05374d25c1221ee","3daf3288cdd1d5a3514825017dd8f4b05286dc85e581b40a3116d0e7a82612a4",178756],["e4f367a4c85b70d748ece4ebc8e032ecd9e9a6a63f762b3ef6b0f6742a8ee252","389c0b0ced03fd4697b50d1b9330be266772c0cb541cd9b86556931581881a69",171836],["9469812866216a3c1fb787344c1f6a8330fd5ddd4054a7dde5942b16c1cb746c","bef59e4d2f692dc2a6c628cea574d8c143aa1cc6a3bdcab151798dfba5afc4cf",155174],["0a5160e45c577b20a37340383d741c1f60998d37640276bf2a07b308a1fa8a2d","c12fc72b2549b523d5cf07c7a625788bffc1056a5dca9994cbb391cc7f8f28bd",166834],["0039d539626e517bfda460eddccdfd78bed97b1721a569db2615cb70db8622eb","c594bf9acc6e02ea5c41c2ef0fe668766e0a213c82c776f1a83213fc7dd8670b",87732],["2dce26fcb0d0248da845834f875520f43f5422d287ebf55e183be0f54689fe41","4b4325a2b4a083197293dfc288d5d8e9505c52d5a8ff02d66e6bc9d71f75e9b0",70600],["5013a05bd76c66b635556a0f4ca5eed8196d75926c8064e313ea28fec27ac432","c09eee12117fb03c979418ec5fb4113fdbbc6586848fed82c31f8c6eb79f4f45",176586]];
+        const lightBase = 'https://xhuozhong.github.io/just-cuz-orbit-assets/reading/q298/';
+        const nativeKey = 'just-cuz-reading-native-session-v1';
+        let nativeSeen = {};
+        try { nativeSeen = JSON.parse(sessionStorage.getItem(nativeKey) || '{}') || {}; } catch (_) {}
+        let lightJob = null;
+        const lightEligible = () => window.matchMedia?.('(max-width:600px)').matches && !!window.crypto?.subtle;
+        function lightRoute(number) {
+          const row = lightRows[number-1];
+          if (!row) return null;
+          return {page:number, source:'pages/page-' + String(number).padStart(3,'0') + '.jpg', sourceSHA256:row[0],
+            sha256:row[1], bytes:row[2], nativeWidth:1600, nativeHeight:number === 37 ? 1999 : 2000,
+            width:1000, height:number === 37 ? 1249 : 1250,
+            url:lightBase + 'page-' + String(number).padStart(3,'0') + '-' + row[1].slice(0,16) + '.webp'};
+        }
+        function exactLightPage(page, route) {
+          return route && page.source === route.source && page.sha256 === route.sourceSHA256 &&
+            page.width === route.nativeWidth && page.height === route.nativeHeight;
+        }
+        function remembered(route) { return nativeSeen[route.sourceSHA256] > Date.now() - 10 * 60 * 1000; }
+        function clearLight() {
+          if (!lightJob) return;
+          clearTimeout(lightJob.timeout); lightJob.controller.abort(); lightJob.image?.remove();
+          if (lightJob.objectURL) URL.revokeObjectURL(lightJob.objectURL);
+          const stage=document.getElementById('page-stage');
+          if (stage?.dataset.readingPreviewPage===String(lightJob.route.page)) delete stage.dataset.readingPreviewPage;
+          lightJob = null;
+        }
+        function startLight(route) {
+          if (!route || !lightEligible() || remembered(route)) return null;
+          if (lightJob?.route.sourceSHA256 === route.sourceSHA256) return lightJob;
+          clearLight();
+          const item = {route, controller:new AbortController(), image:null, objectURL:null, token:null};
+          lightJob = item;
+          item.timeout=setTimeout(() => { if(lightJob===item && !item.image) clearLight(); },6000);
+          item.ready = (async () => {
+            const response = await fetch(route.url, {signal:item.controller.signal, mode:'cors', credentials:'omit', cache:'force-cache', priority:'high'});
+            if (!response.ok || !response.body?.getReader) throw new Error('Reading preview unavailable');
+            const reader = response.body.getReader(), data = new Uint8Array(route.bytes);
+            let offset = 0, complete = false;
+            try {
+              for (;;) {
+                const part = await reader.read();
+                if (part.done) break;
+                if (offset + part.value.byteLength > data.length) throw new Error('Reading preview size mismatch');
+                data.set(part.value,offset); offset += part.value.byteLength;
+              }
+              if (offset !== data.length) throw new Error('Reading preview size mismatch');
+              complete = true;
+            } finally { if (!complete) { try { await reader.cancel(); } catch (_) {} } reader.releaseLock(); }
+            const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',data)), b => b.toString(16).padStart(2,'0')).join('');
+            if (digest !== route.sha256 || lightJob !== item || item.controller.signal.aborted) throw new Error('Reading preview integrity mismatch');
+            const img = new Image(); img.decoding = 'async'; img.draggable = false;
+            item.objectURL = URL.createObjectURL(new Blob([data],{type:'image/webp'}));
+            img.src = item.objectURL; await img.decode();
+            if (img.naturalWidth !== route.width || img.naturalHeight !== route.height || lightJob !== item || item.controller.signal.aborted) throw new Error('Reading preview dimensions mismatch');
+            img.id = 'page-reading-preview'; img.alt = 'Just Cuz · page ' + route.page + ' · reading preview';
+            img.width = route.nativeWidth; img.height = route.nativeHeight;
+            img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:fill;z-index:3;pointer-events:none';
+            clearTimeout(item.timeout); item.image = img; return item;
+          })().catch(() => { if (lightJob === item) clearLight(); return null; });
+          return item;
+        }
+        const firstLightRoute = lightRoute(page);
+        const firstLight = startLight(firstLightRoute);
+        window.ComicReadingLight = Object.freeze({
+          pending(page) { const route=lightRoute(page.page); return !!(lightEligible() && exactLightPage(page,route) && !remembered(route)); },
+          show(page,token,stage) {
+            const route=lightRoute(page.page);
+            if (!exactLightPage(page,route)) { clearLight(); return Promise.resolve(false); }
+            const item=startLight(route);
+            if (!item) return Promise.resolve(false);
+            item.token=token;
+            return item.ready.then(result => {
+              if (!result || lightJob!==item || item.token!==token || item.controller.signal.aborted) return false;
+              stage.append(item.image); stage.dataset.readingPreviewPage=String(page.page);
+              document.dispatchEvent(new CustomEvent('comic-page-light-ready',{detail:{page:page.page,generation:token,sourcePageSha256:page.sha256}}));
+              return true;
+            });
+          },
+          cancelUnless(page) { if (lightJob && !exactLightPage(page,lightJob.route)) clearLight(); },
+          finish(page) {
+            const route=lightRoute(page.page);
+            if (!exactLightPage(page,route)) return;
+            nativeSeen[route.sourceSHA256]=Date.now();
+            try { sessionStorage.setItem(nativeKey,JSON.stringify(nativeSeen)); } catch (_) {}
+            if (lightJob?.route.sourceSHA256===route.sourceSHA256) clearLight();
+            const stage=document.getElementById('page-stage');
+            if (stage?.dataset.readingPreviewPage===String(page.page)) delete stage.dataset.readingPreviewPage;
+          },
+          cancel:clearLight,
+          first:firstLight ? {page:page, source:firstLightRoute.source, sha256:firstLightRoute.sourceSHA256,
+            width:firstLightRoute.nativeWidth,height:firstLightRoute.nativeHeight,ready:firstLight.ready} : null
+        });
+        addEventListener('pagehide',clearLight,{once:true});
+
+        link.fetchPriority = firstLight ? 'low' : 'high';
         link.dataset.originalSource = canonical;
         link.href = routes[canonical]?.[1] || canonical;
         document.head.appendChild(link);
@@ -239,7 +339,7 @@
     })();
   </script>
   <link rel="stylesheet" href="reader-styles-7bb8a4d8661e.css">
-  <script defer src="reader.js?v=q297-42ed6fef058a"></script>
+  <script defer src="reader.js?v=q298-ed237115ec84"></script>
   <script defer src="phone-orbit.js?v=8786f52f42c1"></script>
   <script id="page-model-loader">
 (() => {
@@ -528,6 +628,8 @@
     if (image.naturalWidth !== width || image.naturalHeight !== height) { fallback(); return; }
     image.removeEventListener('load', show);
     loading.hidden = true;
+    const firstLight=window.ComicReadingLight?.first;
+    if (firstLight?.page===pageNumber) window.ComicReadingLight.finish({page:pageNumber,source:original,sha256:firstLight.sha256,width,height});
     caption.textContent = '原画可阅读，互动正在准备…';
   };
   const fallback = () => {
@@ -549,7 +651,14 @@
   image.width = width;
   image.height = height;
   image.alt = 'Just Cuz 第 ' + pageNumber + ' 页完整原画';
-  image.fetchPriority = 'high';
+  const readingLight = window.ComicReadingLight;
+  const firstLight = readingLight?.first;
+  image.fetchPriority = firstLight ? 'low' : 'high';
+  if (firstLight?.page === pageNumber) {
+    const page = {page:pageNumber,source:original,sha256:firstLight.sha256,width,height};
+    const priorityFallback=setTimeout(() => { image.fetchPriority='high'; preload.fetchPriority='high'; },1500);
+    readingLight.show(page,0,stage).then(() => { clearTimeout(priorityFallback); image.fetchPriority='high'; preload.fetchPriority='high'; });
+  }
   image.addEventListener('load', show);
   if (preferred !== original) image.addEventListener('error', fallback, {once:true});
   image.src = preferred;
