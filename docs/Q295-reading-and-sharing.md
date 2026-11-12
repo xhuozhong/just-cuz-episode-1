@@ -66,3 +66,14 @@ quality are not claimed as field-tested.
 Editable sources: `release-source/q295`. The workflow uses only the reviewed
 `docs/pages-release-manifest.json` file map, preserving the existing publication
 environment gate and stable concurrency group. No paid generation was used.
+
+## Cached earlier documents
+
+An older cached HTML document can still request the shared `reader.js` path
+with its older version query. New optional tools therefore initialize only when
+their matching elements exist. Earlier directories keep their page-number focus
+fallback, and missing new dialogs are skipped. A deliberate Q294-HTML/current-JS
+browser test passed startup, six languages, directory, real panel drag/reset and
+navigation. The corrected current document also passed the full 18-check UI
+suite. An earlier pending build of this iteration was rejected before deployment;
+only the cache-compatible revision is approved for publication.

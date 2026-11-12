@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reviewedParent": "ec08d1338f71e11066b8f9840ff2397d727d1feb",
+  "reviewedParent": "2e1166770897bc43b8b2d84c125f7f33f488f21e",
   "candidate": "Q295-reading-and-sharing",
   "maxSiteBytes": 1000000000,
   "files": {
@@ -10,7 +10,7 @@
     },
     "collection-release.json": {
       "bytes": 4822,
-      "sha256": "218eaa0336f3fdb22de02a384eed4f2d120542b3ef53f58d5b36cf5ce8ebc61b"
+      "sha256": "f453690ac73a060b54ecde70872bd9d3cea1651d3c4a25e2f4571f0b5754bff8"
     },
     "collection/ORBIT_VIEWER_LICENSE.txt": {
       "sha256": "077709d959a8a62249523349767edd072cfe6e6ba1b1854beeb95f83a95aec06",
@@ -1830,7 +1830,7 @@
     },
     "collection/index.html": {
       "bytes": 55816,
-      "sha256": "68188d360f7707b72fe11f6aac0eea2cc813a3ccdc83a6f428bb7cb0a39a7a98"
+      "sha256": "655c8f52b0454e709499a441b869fd3b1ef81962edd6e487b2cf913de34f8084"
     },
     "collection/loading-preview.css": {
       "bytes": 5394,
@@ -3561,8 +3561,8 @@
       "bytes": 125037
     },
     "collection/reader.js": {
-      "bytes": 509344,
-      "sha256": "7e495789e6ed00de154b89bceb186147aa306f994a82fe77ffe756f37bdf94e6"
+      "bytes": 509642,
+      "sha256": "aa6c38ca9cbb7df038b85482e0d6b02508f3e724845f54217b7d073a92bb5694"
     },
     "collection/responsive-chrome.css": {
       "bytes": 13362,

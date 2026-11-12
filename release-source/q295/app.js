@@ -292,6 +292,9 @@
   const pageGesture = createPageGesture();
 
   const directoryThumbnails = {2:'ui-assets/directory/page-002-5ea06412b259.webp',36:'ui-assets/directory/page-036-7940008d7245.webp',60:'ui-assets/directory/page-060-c01a4d9ddf0e.webp'};
+  // A cached earlier HTML shell can load the current shared script URL.
+  // Optional new controls must never prevent its existing reader from starting.
+  if ($('share-page') && $('report-dialog') && $('share-dialog')) {
   const readerToolsText = (key, values = {}) => window.ComicLocaleUI?.t(key, values) || String({
     sharePage:'分享这一页',shareCopied:'本页链接已复制',shareCancelled:'已取消分享',copyLink:'复制链接',copyManual:'请选中下面的内容并复制',copySuccess:'已复制',reportTitle:'记录本页问题',reportNote:'这份记录留在你的浏览器里。复制后，可自行发送给制作方。',reportPage:'页码',reportLanguage:'语言',reportReady:'可互动画面',reportNetwork:'网络',reportCategory:'问题类型',reportDescription:'补充说明（选填）',reportLink:'本页链接',reportEmpty:'无',networkOnline:'在线',networkOffline:'离线',networkUnknown:'未提供连接类型',networkSaveData:'节省流量已开启',issueLoading:'加载速度',issueRotation:'转动与操作',issueText:'文字与翻译',issueOther:'其他',reportCopy:'复制问题记录'
   }[key] || key).replace(/\{(\w+)\}/g,(_,name)=>values[name] == null ? '' : String(values[name]));
@@ -395,9 +398,10 @@
   });
   $('close-report').addEventListener('click', () => $('report-dialog').close());
   window.ComicReaderTools = Object.freeze({refresh:refreshReaderTools});
+  }
 
   book.chapters.forEach(ch => {
-    if (directoryThumbnails[ch.start]) {
+    if (directoryThumbnails[ch.start] && $('directory-story-cards')) {
       const card = document.createElement('button'); card.type = 'button';
       card.className = 'directory-story'; card.dataset.chapter = ch.id;
       card.dataset.start = String(ch.start);
@@ -434,6 +438,7 @@
   }
   for (const id of ['directory-dialog', 'original-dialog', 'panel-sources-dialog', 'book-about-dialog', 'share-dialog', 'report-dialog']) {
     const dialog = $(id);
+    if (!dialog) continue;
     dialog.addEventListener('close', () => {
       if (id === 'panel-sources-dialog') clearSourceCrops();
       const opener = dialogs.get(dialog);
@@ -446,10 +451,10 @@
     });
   }
   $('open-directory').addEventListener('click', () => {
-    for (const cover of $('directory-story-cards').querySelectorAll('img[data-thumbnail-source]')) {
+    for (const cover of $('directory-story-cards')?.querySelectorAll('img[data-thumbnail-source]') || []) {
       if (!cover.getAttribute('src')) cover.src = cover.dataset.thumbnailSource;
     }
-    for (const card of $('directory-story-cards').querySelectorAll('.directory-story')) {
+    for (const card of $('directory-story-cards')?.querySelectorAll('.directory-story') || []) {
       if (card.dataset.chapter === chapterOf(current)?.id) card.setAttribute('aria-current','location');
       else card.removeAttribute('aria-current');
     }
@@ -459,7 +464,7 @@
     });
     dialogOpen($('directory-dialog'), $('open-directory'));
     const selected = document.querySelector(`.page-thumb[data-page="${current}"]`);
-    const chapterCard = $('directory-story-cards').querySelector('.directory-story[aria-current="location"]');
+    const chapterCard = $('directory-story-cards')?.querySelector('.directory-story[aria-current="location"]');
     if (chapterCard) {
       $('directory-dialog').scrollTop = 0;
       chapterCard.focus({preventScroll:true});
