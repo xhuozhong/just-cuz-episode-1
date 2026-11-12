@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "reviewedParent": "d96bcae7a66fcd7aa9081f2aecbfa44ad4056592",
-  "candidate": "Q298b-progressive-reading",
+  "reviewedParent": "4455eaec5230a9447a953a6e19d843777f3b67bd",
+  "candidate": "Q299-fast-ready-clear-tabs",
   "maxSiteBytes": 1000000000,
   "files": {
     ".nojekyll": {
@@ -9,8 +9,8 @@
       "bytes": 0
     },
     "collection-release.json": {
-      "bytes": 5021,
-      "sha256": "be11f55b156897708785d7fd8341b8fa160b469c977b30772ccad87e70648ef0"
+      "bytes": 5089,
+      "sha256": "ad4cc556eb6205093a608e7e8e72e470f6af944c60280b9c4059cd4a40a7e3ec"
     },
     "collection/ORBIT_VIEWER_LICENSE.txt": {
       "sha256": "077709d959a8a62249523349767edd072cfe6e6ba1b1854beeb95f83a95aec06",
@@ -1829,8 +1829,8 @@
       "bytes": 1036182
     },
     "collection/index.html": {
-      "bytes": 77658,
-      "sha256": "6f6bf5a0c1fcce80071e7c3a4535e125ca0c519cccaac9588ddacb87fca01b60"
+      "bytes": 90864,
+      "sha256": "987c3f2d0acb8ab1a92c942c9e030f592e1f23e012c773cebf4ac0ee36c2b0d2"
     },
     "collection/loading-preview.css": {
       "bytes": 5394,
@@ -3561,8 +3561,8 @@
       "bytes": 125037
     },
     "collection/reader.js": {
-      "bytes": 539813,
-      "sha256": "ed237115ec842e1f1dcf639b3383a844ab52edaf0937c6414137d2c58e2ca8c0"
+      "bytes": 554054,
+      "sha256": "cc89e63bbf9f12b8d6d07ea116c33171963637e20f3bd9bb4f3e85039f36dd0e"
     },
     "collection/responsive-chrome.css": {
       "bytes": 13362,

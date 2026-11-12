@@ -629,6 +629,30 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
     }
     schedulePump();
   }
+  function useEarlyFront(store) {
+    const small = store.preview, api = window.ComicEarlyFront;
+    if (!small || typeof api?.take !== 'function') return;
+    let frames;
+    try { frames = api.take(small.spec); } catch (_) { return; }
+    if (!frames) return;
+    const generation = store.generation, pack = small.spec.pack;
+    void Promise.resolve(frames).then(async entries => {
+      if (!Array.isArray(entries) || entries.length !== 3) return;
+      const validated = [], seen = new Set(), allowed = [0,Math.min(...pack.indices.filter(index=>index>0)),Math.max(...pack.indices)];
+      for (const [index, blob] of entries) {
+        const row = pack.indices.indexOf(index);
+        if (row < 0 || !allowed.includes(index) || seen.has(index) || !(blob instanceof Blob)
+          || blob.size !== pack.frameBytes[row]) return;
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        if (!webpPayload(bytes) || await digest(store,bytes) !== pack.frameSha256[row]) return;
+        seen.add(index); validated.push([index,blob]);
+      }
+      if (!current(store,generation) || small !== store.preview || small.finished || small.failed) return;
+      // The optional HTML bootstrap already decoded these exact bound dimensions.
+      // Normal bitmap decode below checks dimensions again before any canvas use.
+      for (const [index,blob] of validated) publishBlob(store,index,blob,generation,true);
+    }).catch(() => {});
+  }
   function packTable(pack, bytes) {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     if (bytes.length < 12 || 'ORBF0001'.split('').some((char, index) => bytes[index] !== char.charCodeAt(0))) throw new Error('Invalid frame pack magic');
@@ -1180,6 +1204,13 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
         }
         schedulePump(); return;
       }
+      const paint = consumer.lastPaint, recovery = recoveryState(consumer);
+      if (consumer.ready && paint && paint.bitmap === bitmap && paint.index === index && paint.preview === preview
+        && paint.target === consumer.target && paint.version === consumer.version && paint.epoch === consumer.canvasEpoch
+        && paint.width === consumer.canvas.width && paint.height === consumer.canvas.height && paint.recovery === recovery) {
+        if (consumer.manualTarget === consumer.target) scheduleSettledRange(consumer);
+        schedulePump(); return;
+      }
       try {
         try { beginQualityTransition(consumer, preview); } catch (_) { stopQualityTransition(consumer); }
         if (consumer.verifiedSparseRGBA) consumer.context.clearRect(0,0,consumer.canvas.width,consumer.canvas.height);
@@ -1196,6 +1227,8 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
         return;
       }
       consumer.actualIndex = index; consumer.actualPreview = preview; consumer.actualTarget = consumer.target;
+      consumer.lastPaint = {bitmap,index,preview,target:consumer.target,version:consumer.version,epoch:consumer.canvasEpoch,
+        width:consumer.canvas.width,height:consumer.canvas.height,recovery};
       if (consumer.manualTarget === consumer.target) scheduleSettledRange(consumer);
       const sequence = consumer.store.sequence, firstReady = !consumer.ready;
       consumer.ready = true;
@@ -1287,7 +1320,7 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
       store = {key, id:++serial, sequence, preview, packByIndex, recoveryTried:new Set(), recoveryStates:new Map(), recoveryCancels:new Set(), lastVerifiedRange:warm?.lastVerifiedRange ?? null, subtle:sequence.packs ? window.crypto.subtle : null, generation:0, disposed:false, consumers:new Set(), blobs:warm ? new Map(warm.blobs) : new Map(), frameWaiters:new Map(), requests:new Map(), pending:new Set(), errors:new Map()};
       stores.set(key, store);
       if (preview && preview.finished) armFullPacks(store, 3500);
-      if (preview && !preview.finished) void enqueueRequest(store, preview.spec.pack.source, -2, 0, preview.spec.pack, true).catch(() => {});
+      if (preview && !preview.finished) { useEarlyFront(store); void enqueueRequest(store, preview.spec.pack.source, -2, 0, preview.spec.pack, true).catch(() => {}); }
       // Compressed images are small and reusable; decode only the requested/nearby frames.
       if (sequence.packs) {
         // Demand and its neighbors do not necessarily touch every interleaved
@@ -1296,8 +1329,15 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
         for (const pack of sequence.packs) if (!pack.indices.every(index => store.blobs.has(index))) void enqueueRequest(store, pack.source, 2, pack.indices[0], pack).catch(() => {});
       } else for (let index = 0; index < sequence.frameCount; index++) void requestBlob(store, index, 2).catch(() => {});
     }
-    const consumer = {store, canvas, context, options, editorialFraming:window.ComicPanelPlayer?.editorialViewFraming?.(panel,page)||null, verifiedSparseRGBA:(window.ComicPanelPlayer?.isTransparentStompLayer(panel,page)===true || window.ComicPanelPlayer?.isTransparentCryLayer(panel,page)===true), target:0, actualIndex:-1, actualPreview:false, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false, progressFrame:null, progressVersion:0, progressLoaded:-1, progressFailed:-1, progressRecoveryState:null, rangeRecoveryState:'', previewProgressLoaded:-1, previewProgressFailed:-1, manualTarget:null, earlyRange:false, manualPageEpoch};
+    const consumer = {store, canvas, context, options, editorialFraming:window.ComicPanelPlayer?.editorialViewFraming?.(panel,page)||null, verifiedSparseRGBA:(window.ComicPanelPlayer?.isTransparentStompLayer(panel,page)===true || window.ComicPanelPlayer?.isTransparentCryLayer(panel,page)===true), target:0, actualIndex:-1, actualPreview:false, ready:false, disposed:false, direction:0, version:0, errorVersion:-1, prefetched:new Set(), renderScheduled:false, progressScheduled:false, progressFrame:null, progressVersion:0, progressLoaded:-1, progressFailed:-1, progressRecoveryState:null, rangeRecoveryState:'', canvasEpoch:0, lastPaint:null, resizeObserver:null, previewProgressLoaded:-1, previewProgressFailed:-1, manualTarget:null, earlyRange:false, manualPageEpoch};
     store.consumers.add(consumer);
+    if (typeof MutationObserver === 'function') {
+      consumer.resizeObserver = new MutationObserver(() => {
+        if (consumer.disposed) return;
+        consumer.canvasEpoch++; scheduleRender(consumer);
+      });
+      consumer.resizeObserver.observe(canvas, {attributes:true,attributeFilter:['width','height']});
+    }
     function setPercent(percent) {
       if (consumer.disposed || !Number.isFinite(Number(percent))) return;
       const next = Math.min(sequence.frameCount - 1, Math.floor(Math.max(0, Math.min(100, Number(percent))) / 100 * sequence.frameCount + 1e-9));
@@ -1330,7 +1370,7 @@ window.COMIC_DELIVERY_CONFIG = Object.freeze({"schemaVersion":1,"externalHd":fal
       if (consumer.disposed) return;
       stopQualityTransition(consumer);
       cancelSettledRange(consumer);
-      consumer.disposed = true; consumer.ready = false; store.consumers.delete(consumer);
+      consumer.disposed = true; consumer.ready = false; consumer.resizeObserver?.disconnect(); consumer.lastPaint = null; store.consumers.delete(consumer);
       consumer.progressVersion++;
       if (consumer.progressFrame !== null) window.cancelAnimationFrame(consumer.progressFrame);
       consumer.progressFrame = null; consumer.progressScheduled = false;
@@ -4541,9 +4581,9 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   paperStyle.id = 'comic-panel-loading-paper-style';
   paperStyle.textContent = `
     #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state]:not([hidden]) {
-      position:absolute; left:var(--badge-right); top:var(--badge-bottom); width:max-content;
+      position:absolute; left:var(--paper-x, var(--badge-right)); top:var(--paper-y, var(--badge-bottom)); width:max-content;
       max-width:min(var(--badge-width), 176px); min-width:0; min-height:0;
-      transform:translate(-100%,-100%); display:flex; align-items:center; justify-items:initial;
+      transform:var(--paper-transform, translate(-100%,-100%)); display:flex; align-items:center; justify-items:initial;
       box-sizing:border-box; gap:5px; padding:4px 7px; opacity:1;
       border:1px solid #987c46; border-radius:8px 3px 3px 8px;
       color:#49371f; background:#fff3d9; box-shadow:0 1px 3px #4e351e35;
@@ -4561,6 +4601,11 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state="ready"]:not([hidden]) {
       background:#fff6df; opacity:.9;
     }
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state="ready"] .panel-loading-label { white-space:nowrap; }
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state="ready"][data-symbol-only="true"]:not([hidden]) {
+      padding:3px 5px; gap:0; border-radius:6px 2px 2px 6px;
+    }
+    #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state="ready"][data-symbol-only="true"]:not([hidden]) .panel-loading-label { display:none; }
     #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state]:not([hidden])::before { content:none; }
     #panel-layer > output.panel-loading-percent[data-paper-tab="true"][data-state="ready"]:not([hidden])::before {
       content:"↔" / ""; flex:none; font-size:12px; line-height:1;
@@ -4580,7 +4625,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     const selector = document.getElementById('reading-language');
     const language = window.ComicLocaleUI ? window.ComicLocaleUI.language : selector && selector.value || 'zh';
     const dictionary = window.COMIC_UI_STRINGS && (window.COMIC_UI_STRINGS[language] || window.COMIC_UI_STRINGS.en);
-    const fallback = {loadScene:'这个画面',loadError:'加载暂时中断',loadPreview:'环绕预览加载中',loadHD:'高清画面加载中',loadOrbit:'环绕画面加载中',loadRetry:'请点击页面上方「重新准备」',loadFirst:'先准备全角度小预览，再补充高清',loadDrag:'可拖动试看',loadTab:'加载中',loadTry:'左右拖动看看',loadDragHD:'预览可拖动，高清加载中',loadLast:'正在准备最后的画面，请稍候',loadWait:'完成后拖动更流畅，请稍候',loadRecovering:'自动重试中',loadRecoveryHint:'正在重新准备，请稍候',loadDescription:'{title}，{label} {percent}%，{hint}'};
+    const fallback = {loadScene:'这个画面',loadError:'加载暂时中断',loadPreview:'环绕预览加载中',loadHD:'高清画面加载中',loadOrbit:'环绕画面加载中',loadRetry:'请点击页面上方「重新准备」',loadFirst:'先准备全角度小预览，再补充高清',loadDrag:'可拖动试看',loadTab:'加载中',loadTry:'左右拖动看看',loadTryShort:'左右拖动看看',loadDragHD:'预览可拖动，高清加载中',loadLast:'正在准备最后的画面，请稍候',loadWait:'完成后拖动更流畅，请稍候',loadRecovering:'自动重试中',loadRecoveryHint:'正在重新准备，请稍候',loadDescription:'{title}，{label} {percent}%，{hint}'};
     return String(dictionary && dictionary[key] || fallback[key] || key).replace(/\{(\w+)\}/g,(_,name) => values[name] == null ? '' : String(values[name]));
   }
   const positive = value => Number.isFinite(value) && value > 0;
@@ -4612,6 +4657,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     return textAreas.get(page);
   }
   function geometry(host, layerWidth, layerHeight) {
+    if (!positive(layerWidth) || !positive(layerHeight)) return null;
     const source = panels.get(host.dataset.sourcePanelId);
     if (!source) return null;
     const {page, panel} = source, bounds = panel.bounds;
@@ -4623,32 +4669,96 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     }
     const scaleX = layerWidth / page.width, scaleY = layerHeight / page.height;
     const tiny = rect.width * scaleX < 86 || rect.height * scaleY < 40;
-    const rightEdge = bounds.x + rect.x + rect.width;
-    const topEdge = bounds.y + rect.y;
-    const bottomEdge = topEdge + rect.height;
-    let quietBottom = bottomEdge;
-    if (positive(scaleX) && positive(scaleY)) {
-      const badgeWidth = Math.min(tiny ? 40 : 172, rect.width * scaleX - 12) / scaleX;
-      const badgeHeight = (tiny ? 20 : 28) / scaleY;
-      const right = rightEdge - 6 / scaleX;
-      const gap = 6 / scaleY;
-      for (const area of captionBoxes(page)) {
-        const bottom = quietBottom - gap;
-        if (area.x < right && area.x + area.width > right - badgeWidth
-            && area.y < bottom && area.y + area.height > bottom - badgeHeight
-            && area.y - gap - badgeHeight > topEdge) quietBottom = area.y;
-      }
-    }
+    const leftEdge = bounds.x + rect.x, topEdge = bounds.y + rect.y;
+    const rightEdge = leftEdge + rect.width, bottomEdge = topEdge + rect.height;
     return {
       left:`${(bounds.x + rect.x + rect.width / 2) / page.width * 100}%`,
       top:`${(bounds.y + rect.y + rect.height / 2) / page.height * 100}%`,
       width:`calc(${rect.width / page.width * 100}% - 12px)`,
       right:`calc(${rightEdge / page.width * 100}% - 6px)`,
-      bottom:`calc(${quietBottom / page.height * 100}% - 6px)`,
+      bottom:`calc(${bottomEdge / page.height * 100}% - 6px)`,
+      page, scaleX, scaleY,
+      pageWidth:layerWidth, pageHeight:layerHeight,
+      region:{x:leftEdge * scaleX,y:topEdge * scaleY,width:rect.width * scaleX,height:rect.height * scaleY},
       tiny,
       // A tall page can be physically small even in a wide, short window.
       compact:rect.width / page.width < .4 || positive(layerWidth) && rect.width * scaleX < 150
     };
+  }
+  // Conservative character/foreground bounds reviewed against these exact original pages.
+  // Other pages still receive measured, caption-safe outer-edge placement.
+  const foregroundAreas = {
+    'd1e38bcf348b8a1d5e7360e980191ce116c50d660e13b69ff58e561f8e3e0ed4':[[970,210,420,430],[1310,50,245,295],[805,550,215,380],[330,740,650,400],[90,940,265,180],[535,1110,330,400],[105,1350,485,325],[590,1580,340,380]],
+    'd0f3c3861ad1cf09a11d687939811900bec9636ec9a9a478e9888b518939dafb':[[150,10,640,1180],[300,500,1040,830],[0,1320,750,660],[840,1010,735,970]],
+    'd54451a154ee9fecacced539013ed6ae5c56f41533d0d487e80d4bdf280b0030':[[120,220,285,210],[75,330,340,120],[165,405,225,230],[185,615,190,130],[555,60,230,300],[465,335,255,220],[550,535,180,140],[585,650,410,515],[1180,470,250,640],[170,1080,450,655],[840,1330,665,335]]
+  };
+  const intersection = (a,b) => Math.max(0,Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x))
+    * Math.max(0,Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y));
+  const inflate = (rect,gap) => ({x:rect.x-gap,y:rect.y-gap,width:rect.width+gap*2,height:rect.height+gap*2});
+  function placement(point,width,height,occupied,bookEdge = false) {
+    const target = point.region;
+    const region = bookEdge ? {x:0,y:0,width:point.pageWidth,height:point.pageHeight} : target;
+    const gap = bookEdge ? 4 : Math.min(6,Math.max(2,Math.min(region.width,region.height)/12));
+    const left = region.x + gap, top = region.y + gap;
+    const right = region.x + region.width - gap - width, bottom = region.y + region.height - gap - height;
+    if (right < left || bottom < top) return null;
+    const toScreen = rect => ({x:rect.x*point.scaleX,y:rect.y*point.scaleY,width:rect.width*point.scaleX,height:rect.height*point.scaleY});
+    const captions = captionBoxes(point.page).map(toScreen).map(rect=>inflate(rect,3));
+    const foreground = (foregroundAreas[point.page.sha256] || []).map(([x,y,width,height])=>toScreen({x,y,width,height})).map(rect=>inflate(rect,3));
+    const obstacles = [...captions,...foreground,...occupied.map(rect=>inflate(rect,3))];
+    const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
+    const xs = bookEdge ? [target.x+target.width-width,target.x,target.x+(target.width-width)/2].map(x=>clamp(x,left,right)) : [right,left,(left+right)/2,left+(right-left)*.25,left+(right-left)*.75];
+    const ys = bookEdge ? [target.y+target.height-height,target.y,target.y+(target.height-height)/2].map(y=>clamp(y,top,bottom)) : [bottom,top,(top+bottom)/2,top+(bottom-top)*.25,top+(bottom-top)*.75];
+    for (const area of obstacles) {
+      xs.push(clamp(area.x-width-1,left,right),clamp(area.x+area.width+1,left,right));
+      ys.push(clamp(area.y-height-1,top,bottom),clamp(area.y+area.height+1,top,bottom));
+    }
+    const candidates = [];
+    for (const x of xs) { candidates.push({x,y:bottom,width,height},{x,y:top,width,height}); }
+    for (const y of ys) { candidates.push({x:right,y,width,height},{x:left,y,width,height}); }
+    let best = null;
+    for (let index=0;index<candidates.length;index++) {
+      const box = candidates[index];
+      const captionOverlap = captions.reduce((sum,area)=>sum+intersection(box,area),0);
+      const foregroundOverlap = foreground.reduce((sum,area)=>sum+intersection(box,area),0);
+      const occupiedOverlap = occupied.reduce((sum,area)=>sum+intersection(box,inflate(area,3)),0);
+      const distance = bookEdge ? Math.hypot(Math.max(target.x-box.x-width,box.x-target.x-target.width,0),Math.max(target.y-box.y-height,box.y-target.y-target.height,0)) : 0;
+      const score = captionOverlap*20 + foregroundOverlap*8 + occupiedOverlap*30 + distance*.01 + index*.001;
+      if (!best || score < best.score) best = {...box,bookEdge,score,captionOverlap,foregroundOverlap,occupiedOverlap,safe:captionOverlap+foregroundOverlap+occupiedOverlap < .01};
+    }
+    return best;
+  }
+  function layoutBadge(record,point,occupied) {
+    if (record.badge.hidden) { record.layoutKey = ''; return; }
+    const badge = record.badge, ready = badge.dataset.state === 'ready';
+    const key = [record.label.textContent,record.number.textContent,badge.dataset.state,point.region.x,point.region.y,point.region.width,point.region.height,...occupied.flatMap(box=>[box.x,box.y,box.width,box.height])].join('|');
+    if (record.layoutKey === key) { if (record.placed) occupied.push(record.placed); return; }
+    badge.dataset.symbolOnly = 'false';
+    // Measure the actual painted box, then remove the page's current zoom transform.
+    const layerBox = layer.getBoundingClientRect();
+    const zoomX = layerBox.width / layer.clientWidth || 1, zoomY = layerBox.height / layer.clientHeight || 1;
+    const measure = () => { const box=badge.getBoundingClientRect(); return [Math.ceil(box.width/zoomX),Math.ceil(box.height/zoomY)]; };
+    let [width,height] = measure();
+    let selected = placement(point,width,height,occupied);
+    const tooLarge = width*height > point.region.width*point.region.height*.12 || height > point.region.height*.22 || badge.scrollWidth > width+1;
+    if (ready && (!selected?.safe || tooLarge)) {
+      badge.dataset.symbolOnly = 'true';
+      [width,height] = measure();
+      selected = placement(point,width,height,occupied);
+      if (!selected?.safe) {
+        const edge = placement(point,width,height,occupied,true);
+        if (edge?.safe || edge && (!selected || edge.score < selected.score)) selected = edge;
+      }
+    }
+    if (!selected) selected = {x:point.region.x+2,y:point.region.y+2,width,height,safe:false};
+    badge.style.setProperty('--paper-x',`${selected.x}px`);
+    badge.style.setProperty('--paper-y',`${selected.y}px`);
+    badge.style.setProperty('--paper-transform','none');
+    badge.dataset.placement = selected.safe ? 'clear-edge' : 'least-overlap-edge';
+    badge.dataset.placementScope = selected.bookEdge ? 'book' : 'region';
+    badge.dataset.placementOverlap = JSON.stringify([selected.captionOverlap||0,selected.foregroundOverlap||0,selected.occupiedOverlap||0]);
+    badge.dataset.measuredWidth = String(width); badge.dataset.measuredHeight = String(height);
+    record.layoutKey = key; record.placed = selected; occupied.push(selected);
   }
   function videoFraction(video) {
     if (!video || !positive(video.duration)) return 0;
@@ -4682,9 +4792,9 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     const state = usable ? 'ready' : recovering ? 'loading' : data.interactionState === 'error' || interrupted ? 'error' : 'loading';
     const gyroReady = document.body.dataset.orbitInput === 'gyro' && usable;
     const title = text('loadScene');
-    const label = text(state === 'error' ? 'loadError' : usable ? 'loadTry' : recovering ? 'loadRecovering' : 'loadTab');
+    const label = text(state === 'error' ? 'loadError' : usable ? 'loadTryShort' : recovering ? 'loadRecovering' : 'loadTab');
     const hint = text(state === 'error' ? 'loadRetry' : recovering ? 'loadRecoveryHint' : previewPhase ? 'loadFirst' : percent === 99 ? 'loadLast' : 'loadWait');
-    const description = usable ? label : state === 'error' ? `${title}，${label}。${hint}` : text('loadDescription',{title,label:text(recovering ? 'loadRecovering' : previewPhase ? 'loadPreview' : 'loadOrbit'),percent,hint});
+    const description = usable ? text('loadTry') : state === 'error' ? `${title}，${label}。${hint}` : text('loadDescription',{title,label:text(recovering ? 'loadRecovering' : previewPhase ? 'loadPreview' : 'loadOrbit'),percent,hint});
     // Neither visible nor accessible text mixes quiet HD completion with preview preparation.
     const numberText = usable || state === 'error' ? '' : `${percent}%`;
     if (record.number.textContent !== numberText) record.number.textContent = numberText;
@@ -4720,7 +4830,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     document.body.classList.toggle('chapter-art-ready', canDecorate);
     if (canDecorate && !alreadyReady) document.dispatchEvent(new Event('comic-page-previews-ready'));
     for (const [host, record] of records) if (!hosts.has(host)) { remove(record); records.delete(host); }
-    const layerWidth = layer.clientWidth, layerHeight = layer.clientHeight;
+    const layerWidth = layer.clientWidth, layerHeight = layer.clientHeight, occupied = [];
     for (const host of hosts) {
       const point = geometry(host, layerWidth, layerHeight);
       if (!point) { if (records.has(host)) { remove(records.get(host)); records.delete(host); } continue; }
@@ -4750,6 +4860,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       record.badge.dataset.compact = String(point.compact);
       record.badge.dataset.tiny = String(point.tiny);
       update(host, record);
+      layoutBadge(record,point,occupied);
     }
   }
   function queue() {
@@ -4777,6 +4888,9 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   document.addEventListener('comic-orbit-input-change', queue);
   document.addEventListener('comic-hd-budget-change', queue);
   document.addEventListener('comic-language-change', queue);
+  function refreshMeasurements() { for (const record of records.values()) record.layoutKey = ''; queue(); }
+  document.fonts?.addEventListener('loadingdone',refreshMeasurements);
+  document.fonts?.ready.then(refreshMeasurements);
   const api = Object.freeze({refresh:queue, destroy() {
     destroyed = true; observer.disconnect(); if (resizeObserver) resizeObserver.disconnect(); layer.removeEventListener('comic-panel-status', queue); document.removeEventListener('comic-language-change', queue);
     layer.removeEventListener('comic-panel-dragged', rememberDrag);
@@ -4784,6 +4898,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     document.removeEventListener('comic-orbit-input-change', queue);
     document.removeEventListener('comic-hd-budget-change', queue);
     document.removeEventListener('comic-page-model-ready', registerCurrentModel);
+    document.fonts?.removeEventListener('loadingdone',refreshMeasurements);
     for (const record of records.values()) remove(record);
     paperStyle.remove();
     records.clear();
@@ -5025,6 +5140,7 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
     loadFirst:['先准备全角度小预览，再补充高清','Preparing all-angle previews, then sharper images','全角度の軽量プレビューの後に高精細画像を準備','모든 각도 미리보기 후 고화질 그림을 준비해요','Сначала предпросмотр всех ракурсов, затем чёткие изображения','Aperçu de tous les angles, puis images plus nettes'],
     loadDrag:['可拖动试看','Drag to preview','ドラッグして試す','드래그하여 미리보기','Тяните для предпросмотра','Faites glisser pour essayer'],
     loadTab:['加载中','Loading','準備中','로딩 중','Загрузка','Chargement'],
+    loadTryShort:['左右拖动看看','Drag','ドラッグ','드래그','Тяните','Glissez'],
     loadTry:['左右拖动看看','Drag left or right','左右にドラッグ','좌우로 드래그','Потяните влево или вправо','Glissez à gauche ou à droite'],
     loadDragHD:['预览可拖动，高清加载中','Preview ready; sharper images are loading','プレビューはドラッグ可能。高精細画像を読み込み中','미리보기는 드래그 가능, 고화질 로딩 중','Предпросмотр можно вращать; чёткие изображения загружаются','Aperçu prêt ; images plus nettes en chargement'],
     loadLast:['正在准备最后的画面，请稍候','Preparing the final images; please wait','最後の画像を準備しています。お待ちください','마지막 그림을 준비 중이에요. 잠시 기다려 주세요','Готовим последние изображения. Подождите','Préparation des dernières images, un instant'],
@@ -5211,10 +5327,11 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
     if (!locale?.translationAsset || locale.translations) return Promise.resolve();
     if (translationRequests.has(next)) return translationRequests.get(next);
     const {source, sha256} = locale.translationAsset;
+    const controller=new AbortController(),deadline=setTimeout(()=>controller.abort(),8000);
     const pending = (async () => {
       if (!/^[a-f0-9]{64}$/.test(sha256) || source !== `locale-assets/${next}-${sha256.slice(0, 12)}.json`)
         throw new Error('Invalid translation route');
-      const response = await fetch(source, {cache:failedTranslations.has(next) ? 'reload' : 'force-cache', priority:'low'});
+      const response = await fetch(source, {signal:controller.signal,cache:failedTranslations.has(next) ? 'reload' : 'force-cache', priority:'low'});
       if (!response.ok) throw new Error('Translation response failed');
       const bytes = await response.arrayBuffer();
       if (bytes.byteLength < 10 || bytes.byteLength > 131072) throw new Error('Invalid translation size');
@@ -5227,19 +5344,21 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
         || Object.keys(packet.translations).length !== locale.translationAsset.entries
         || !Object.entries(packet.translations).every(([id, value]) => /^p\d{3}-[a-z0-9-]+$/.test(id) && typeof value === 'string'))
         throw new Error('Invalid translation data');
+      if(controller.signal.aborted)throw new DOMException('Language request expired','AbortError');
       locale.translations = Object.freeze(packet.translations);
       failedTranslations.delete(next);
     })().catch(error => {
       failedTranslations.add(next);
       throw error;
-    }).finally(() => translationRequests.delete(next));
+    }).finally(() => {clearTimeout(deadline);translationRequests.delete(next);});
     translationRequests.set(next, pending);
     return pending;
   }
-  function translated(region){
-    if(region.strategy==='brand'||region.preserveOriginalBrand||language==='en')return region.english;
-    return language==='zh'?region.zh:(locales.locales[language]?.translations?.[region.id]||region.english);
+  function translatedFor(region,next){
+    if(region.strategy==='brand'||region.preserveOriginalBrand||next==='en')return region.english;
+    return next==='zh'?region.zh:(locales.locales[next]?.translations?.[region.id]||region.english);
   }
+  function translated(region){return translatedFor(region,language);}
   function formattedTranslation(region,fit){
     const text=translated(region),lines=fit&&fit.lineBreaks&&fit.lineBreaks[language];
     // A reviewed line plan may change whitespace only, never story content.
@@ -5324,7 +5443,9 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
   let language='zh', current=null, version=0, raf=0;
   try { const q=new URL(location.href).searchParams.get('lang'), saved=localStorage.getItem('just-cuz-reading-language'); language=supported.includes(q) ? q : supported.includes(saved) ? saved : 'zh'; } catch (_) {}
   const initialLanguage = language;
-  if (locales.locales[language]?.translationAsset) language = 'en';
+  // The native English artwork is readable while the preferred language's
+  // packet and exact font are prepared, including the initial saved choice.
+  if (language !== 'en') language = 'en';
   const layer=document.createElement('div'); layer.id='comic-translation-layer'; layer.className='comic-translation-layer'; layer.lang='zh-CN'; stage.append(layer);
   const sr=document.createElement('div');sr.className='sr-only';sr.id='comic-readable-text';stage.append(sr);
   const rectOK=(r,p)=>r && ['x','y','width','height'].every(k=>Number.isFinite(r[k])) && r.x>=0 && r.y>=0 && r.width>0 && r.height>0 && r.x+r.width<=p.width && r.y+r.height<=p.height;
@@ -5465,40 +5586,103 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
   let requestedLanguage = null;
   const translationStatus = document.createElement('span');
   translationStatus.id = 'translation-load-status';
-  translationStatus.className = 'sr-only';
+  translationStatus.className = 'translation-load-status';
+  translationStatus.hidden = true;
   translationStatus.setAttribute('role', 'status');
+  translationStatus.setAttribute('aria-live', 'polite');
+  translationStatus.setAttribute('aria-atomic', 'true');
   selector.after(translationStatus);
   selector.setAttribute('aria-describedby', translationStatus.id);
+  const languagePicker=selector.closest('.language-switch')||selector.parentElement;
+  const languageStatusStyle=document.createElement('style');languageStatusStyle.id='translation-load-status-style';
+  languageStatusStyle.textContent=`
+    .language-switch[data-language-state]{flex-wrap:wrap;row-gap:0}
+    .language-switch[data-language-state] #reading-language{flex:1 1 64px;min-width:0;max-width:calc(100% - 18px)}
+    #translation-load-status{flex:1 0 100%;box-sizing:border-box;min-width:0;max-width:100%;padding:1px 1px 3px;color:#615039;font:inherit;font-size:10px;line-height:1.25;white-space:normal;overflow-wrap:anywhere;pointer-events:none}
+    #translation-load-status[data-state="error"]{color:#883c2b}
+    #translation-load-status[hidden]{display:none!important}
+  `;document.head.append(languageStatusStyle);
   const translationMessages = {
-    zh:['正在加载所选语言。','暂时无法加载所选语言，可重新选择重试。'],
-    en:['Loading the selected language.','The selected language could not load. Select it again to retry.'],
-    ja:['選んだ言語を読み込んでいます。','言語を読み込めませんでした。もう一度選択してください。'],
-    ko:['선택한 언어를 불러오는 중입니다.','언어를 불러올 수 없습니다. 다시 선택해 주세요.'],
-    ru:['Загружается выбранный язык.','Не удалось загрузить язык. Выберите его ещё раз.'],
-    fr:['Chargement de la langue choisie.','Impossible de charger cette langue. Sélectionnez-la de nouveau.']
+    zh:['正在切换…','切换失败 · 重选重试'],
+    en:['Switching…','Could not switch · select again'],
+    ja:['切り替え中…','切替失敗 · 再選択してください'],
+    ko:['전환 중…','전환 실패 · 다시 선택해 주세요'],
+    ru:['Переключаем…','Ошибка · выберите снова'],
+    fr:['Changement…','Échec · sélectionnez à nouveau']
   };
+  function languageFeedback(state){
+    translationStatus.hidden=!state;
+    translationStatus.textContent=state?(translationMessages[language]||translationMessages.en)[state==='error'?1:0]:'';
+    if(state){translationStatus.dataset.state=state;languagePicker.dataset.languageState=state;}
+    else{delete translationStatus.dataset.state;delete languagePicker.dataset.languageState;}
+    selector.toggleAttribute('data-language-pending',state==='loading');
+    selector.setAttribute('aria-busy',String(state==='loading'));
+  }
+  const readyFontFamilies=new Set(),failedFontFamilies=new Set(),retryFontFaces=new Map();
+  const fontSamples={zh:'故事原文',ja:'物語です',ko:'이야기',ru:'История',fr:'Une histoire'};
+  function declaredFontSource(family){
+    for(const sheet of document.styleSheets){
+      let rules;try{rules=sheet.cssRules;}catch(_){continue;}
+      for(const rule of rules){
+        const value=rule.style?.getPropertyValue('font-family').replace(/["']/g,'').trim();
+        if(value===family&&rule.style.getPropertyValue('src'))return {source:rule.style.getPropertyValue('src'),unicodeRange:rule.style.getPropertyValue('unicode-range')};
+      }
+    }
+    return null;
+  }
+  async function prepareLanguageFont(next,isCurrent){
+    if(next==='en'||!document.fonts?.load)return;
+    const family=locales.locales[next]?.fontFamily||'Just Cuz Bilingual';
+    if(readyFontFamilies.has(family))return;
+    const sample=(current?.transcript||current?.regions||[]).map(region=>translatedFor(region,next)).filter(Boolean).join(' ')||fontSamples[next];
+    try{
+      if(failedFontFamilies.has(family)){
+        // A failed CSS FontFace keeps its rejected promise. A fresh face at
+        // the same declared immutable URL makes a selector retry effective.
+        const spec=declaredFontSource(family),match=spec?.source.match(/url\(["']?([^"')]+)["']?\)/);if(!match||typeof FontFace!=='function')throw new Error('Language font unavailable');
+        const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);let bytes;
+        try{
+          const response=await fetch(new URL(match[1],document.baseURI),{signal:controller.signal,cache:'reload',priority:'low'});
+          if(!response.ok)throw new Error('Language font retry failed');bytes=await response.arrayBuffer();
+          if(!bytes.byteLength||bytes.byteLength>1024*1024||controller.signal.aborted)throw new Error('Invalid language font');
+        }finally{clearTimeout(timer);}
+        const descriptors={style:'normal',weight:'400'};if(spec.unicodeRange)descriptors.unicodeRange=spec.unicodeRange;
+        const face=new FontFace(family,bytes,descriptors);
+        await face.load();if(!isCurrent())return;
+        const previous=retryFontFaces.get(family);if(previous)document.fonts.delete(previous);
+        document.fonts.add(face);retryFontFaces.set(family,face);
+      }else{
+        const faces=await document.fonts.load(`400 64px "${family}"`,sample);
+        if(!faces.length||faces.some(face=>face.status!=='loaded'||face.family.replace(/["']/g,'')!==family))throw new Error('Language font not ready');
+      }
+      if(!isCurrent())return;readyFontFamilies.add(family);failedFontFamilies.delete(family);
+    }catch(error){failedFontFamilies.add(family);throw error;}
+  }
   async function setLanguage(next, persist = true) {
     if (!supported.includes(next)) return;
     const ticket = ++languageTicket;
     requestedLanguage = next;
     const download = locales.locales[next]?.translationAsset && !locales.locales[next].translations;
-    translationStatus.textContent = download ? translationMessages[language][0] : '';
-    selector.toggleAttribute('data-language-pending', Boolean(download));
+    languageFeedback('loading');
+    let fontPending=false,preparing=true,timer;
     try {
-      if (download) await fetchTranslation(next);
+      await Promise.race([(async()=>{
+        if (download) await fetchTranslation(next);
+        if (ticket !== languageTicket) return;
+        fontPending=true;await prepareLanguageFont(next,()=>preparing&&ticket===languageTicket);fontPending=false;
+      })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Language preparation expired')),8000);})]);
     } catch (_) {
       if (ticket !== languageTicket) return;
+      if(fontPending&&next!=='en')failedFontFamilies.add(locales.locales[next]?.fontFamily||'Just Cuz Bilingual');
       requestedLanguage = null;
       selector.value = language;
-      selector.removeAttribute('data-language-pending');
-      translationStatus.textContent = translationMessages[language][1];
+      languageFeedback('error');
       return;
-    }
+    } finally {preparing=false;clearTimeout(timer);}
     if (ticket !== languageTicket) return;
     requestedLanguage = null;
-    selector.removeAttribute('data-language-pending');
-    translationStatus.textContent = '';
     language = next;
+    languageFeedback(null);
     if (current) showPage(current.sourcePage); else updateLanguageUI();
     sizeLayer();
     for (const item of elements) fitText(item.element,item.max,item.min);
