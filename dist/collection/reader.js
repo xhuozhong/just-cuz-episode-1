@@ -3416,7 +3416,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       }
     }
     viewport.addEventListener('pointerdown', event => {
-      if (event.pointerType !== 'touch' || !loaded || document.querySelector('dialog[open]')) return;
+      if (event.pointerType !== 'touch' || !loaded || document.querySelector('dialog[open]') || event.target.closest('.panel-focus-entry')) return;
       touches.set(event.pointerId, point(event));
       if (touches.size >= 2) {
         if (!locked || touches.size === 2 && !pinch) beginPinch();
@@ -3483,6 +3483,198 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     return Object.freeze({reset});
   }
   const pageGesture = createPageGesture();
+
+  // Single-panel reading reuses the live source composition and every player.
+  const panelFocus = (() => {
+    const languages = ['zh','en','ja','ko','ru','fr'];
+    const labels = {
+      open:['放大','Enlarge','拡大','확대','Крупнее','Agrandir'],
+      title:['单格阅读','Panel reading','コマを読む','한 칸 읽기','Чтение кадра','Lecture de la case'],
+      close:['返回整页','Back to page','ページに戻る','전체 페이지로','К странице','Retour à la page'],
+      hint:['左右拖动转动 · 双指缩放 · 双击还原视角','Drag to turn · Pinch to zoom · Double-click to reset','ドラッグで回転 · ピンチで拡大 · ダブルクリックで戻す','드래그하여 회전 · 두 손가락으로 확대 · 두 번 눌러 복원','Тяните для поворота · Щипок для масштаба · Двойное нажатие для сброса','Glissez pour tourner · Pincez pour zoomer · Double-clic pour rétablir'],
+      fit:['适合单格','Fit panel','コマ全体','한 칸 맞춤','Весь кадр','Case entière'],
+      zoomIn:['放大画面','Zoom in','画面を拡大','화면 확대','Увеличить','Agrandir la vue'],
+      zoomOut:['缩小画面','Zoom out','画面を縮小','화면 축소','Уменьшить','Réduire la vue'],
+      number:['第 {n} 格','Panel {n}','{n}コマ目','{n}번째 칸','Кадр {n}','Case {n}']
+    };
+    let language = 'zh', selection = null, entries = [], entryLayer = null, modal = null;
+    let frame, clip, heading, hint, back, fit, minus, plus, saved = null, focusZoom = 1;
+    let offsetX = 0, offsetY = 0, gesture = null, pinchLocked = false, ignoreClickUntil = 0;
+    let backPending = false, pendingOpen = null;
+    const touches = new Map();
+    const t = (key,n) => labels[key][Math.max(0,languages.indexOf(window.ComicLocaleUI?.language || language))].replace('{n}',n);
+    const emit = () => document.dispatchEvent(new CustomEvent('comic-panel-focus-change',{detail:{active:!!selection}}));
+    function consume(event) { event.preventDefault(); event.stopImmediatePropagation(); }
+    function geometry() {
+      const [a,b] = [...touches.values()];
+      return {x:(a.x+b.x)/2,y:(a.y+b.y)/2,distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y))};
+    }
+    function resetTouch() {
+      const ids = [...touches.keys()]; touches.clear(); gesture = null;
+      if (pinchLocked) { pinchLocked = false; document.body.dataset.pageGesture='idle'; document.dispatchEvent(new Event('comic-page-gesture-change')); }
+      for (const id of ids) { try { if(frame?.hasPointerCapture(id))frame.releasePointerCapture(id); } catch (_) {} }
+    }
+    function syncBadges() {
+      if(!selection)return;
+      for(const badge of panelLayer.querySelectorAll('.panel-loading-percent')){
+        badge.dataset.panelFocusCurrent=String(badge.dataset.sourcePanelId===selection.host.dataset.sourcePanelId && (badge.dataset.interactionRegion||'')===(selection.host.dataset.interactionRegion||''));
+      }
+    }
+    function layout() {
+      if (!selection || !frame) return;
+      syncBadges();
+      const q=selection.rect, page=selection.page;
+      const base=Math.min(Math.max(1,frame.clientWidth-16)/q.width,Math.max(1,frame.clientHeight-16)/q.height);
+      const scale=base*focusZoom, w=q.width*scale, h=q.height*scale;
+      offsetX=w<=frame.clientWidth?0:Math.max(-(w-frame.clientWidth)/2,Math.min((w-frame.clientWidth)/2,offsetX));
+      offsetY=h<=frame.clientHeight?0:Math.max(-(h-frame.clientHeight)/2,Math.min((h-frame.clientHeight)/2,offsetY));
+      // The viewport clips the same full-page coordinates. No image is cropped,
+      // redrawn, stretched, reloaded or converted into a second player.
+      Object.assign(clip.style,{width:`${w}px`,height:`${h}px`,left:`${(frame.clientWidth-w)/2+offsetX}px`,top:`${(frame.clientHeight-h)/2+offsetY}px`});
+      Object.assign(stage.style,{position:'absolute',margin:'0',width:`${page.width*scale}px`,height:`${page.height*scale}px`,left:`${-q.x*scale}px`,top:`${-q.y*scale}px`});
+      minus.disabled=focusZoom<=1;plus.disabled=focusZoom>=4;
+    }
+    function refresh() {
+      for (const item of entries) { item.button.textContent='↗ '+t('open'); item.button.setAttribute('aria-label',`${t('open')} · ${t('number',item.index+1)}`); }
+      if (!modal) return;
+      heading.textContent=selection?`${t('title')} · ${t('number',selection.index+1)}`:t('title');
+      hint.textContent=t('hint');back.textContent=t('close');fit.textContent=t('fit');
+      minus.setAttribute('aria-label',t('zoomOut'));plus.setAttribute('aria-label',t('zoomIn'));
+    }
+    function ensureModal() {
+      if (modal) return;
+      const style=document.createElement('style');style.id='comic-panel-focus-styles';style.textContent=`
+        .panel-focus-entries{position:absolute;inset:0;z-index:34;pointer-events:none}
+        .panel-focus-entry{position:absolute;transform:translate(-100%,-100%);pointer-events:auto;min-width:44px;min-height:44px;padding:5px 8px;border:1px solid #7a684b;border-radius:9px;background:#fff9e9e8;color:#57462f;box-shadow:0 1px 3px #55442225;font-family:inherit;font-weight:600;font-size:12px;line-height:1.2;white-space:nowrap;touch-action:manipulation}
+        .panel-focus-entry:focus-visible{outline:3px solid #236c92;outline-offset:2px}
+        .panel-focus-dialog{width:min(1120px,calc(100vw - 12px));height:calc(100dvh - 16px);max-height:calc(100dvh - 16px);max-width:calc(100vw - 12px);margin:auto;border-radius:14px;background:#fff8e7;overflow:hidden;padding:0;box-sizing:border-box}
+        .panel-focus-dialog[open]{display:flex;flex-direction:column}
+        .panel-focus-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:8px 10px;border-bottom:1px solid #d7c7a9;background:#fff9ec;flex:none}
+        .panel-focus-toolbar h2{font-family:inherit;font-weight:700;font-size:15px;line-height:1.3;margin:0;flex:1 1 100px}
+        .panel-focus-toolbar button{min-height:44px;min-width:44px;padding:7px 10px;font-size:13px}
+        .panel-focus-frame{position:relative;flex:1;min-height:120px;overflow:hidden;touch-action:none;isolation:isolate;background-color:#fbf3df;background-image:var(--story-grain,none);background-size:160px 160px}
+        .panel-focus-clip{position:absolute;overflow:hidden;background:white}
+        .panel-focus-clip .page-stage{box-shadow:none;max-width:none;touch-action:none}
+        .panel-focus-clip .panel-host{touch-action:none}
+        .panel-focus-dialog .panel-focus-entries{display:none}
+        .panel-focus-dialog .panel-loading-percent:not([data-panel-focus-current="true"]),.panel-focus-dialog .panel-loading-percent[data-mobile-state="drag"],.panel-focus-dialog .panel-loading-percent[data-state="ready"],.panel-focus-dialog .panel-loading-percent[data-hd-on-demand="true"]{display:none!important}
+        .panel-focus-hint{margin:0;padding:7px 10px;font-size:11px;line-height:1.4;color:#665640;flex:none;background:#fff9ec}
+        @media(max-width:420px){.panel-focus-toolbar{padding:7px;gap:4px}.panel-focus-toolbar h2{flex-basis:100%;font-size:14px}.panel-focus-toolbar button{padding:7px 8px}.panel-focus-hint{font-size:10px}}
+      `;document.head.append(style);
+      modal=document.createElement('dialog');modal.id='panel-focus-dialog';modal.className='panel-focus-dialog';modal.setAttribute('aria-labelledby','panel-focus-heading');modal.setAttribute('aria-describedby','panel-focus-hint');
+      const toolbar=document.createElement('div');toolbar.className='panel-focus-toolbar';
+      heading=document.createElement('h2');heading.id='panel-focus-heading';
+      back=document.createElement('button');back.type='button';back.id='panel-focus-close';back.addEventListener('click',()=>close());
+      fit=document.createElement('button');fit.type='button';fit.id='panel-focus-fit';fit.addEventListener('click',()=>{resetTouch();focusZoom=1;offsetX=offsetY=0;layout();});
+      minus=document.createElement('button');minus.type='button';minus.textContent='−';minus.id='panel-focus-minus';minus.addEventListener('click',()=>{focusZoom=Math.max(1,focusZoom/1.4);offsetX=offsetY=0;layout();});
+      plus=document.createElement('button');plus.type='button';plus.textContent='+';plus.id='panel-focus-plus';plus.addEventListener('click',()=>{focusZoom=Math.min(4,focusZoom*1.4);layout();});
+      toolbar.append(heading,minus,plus,fit,back);
+      frame=document.createElement('div');frame.className='panel-focus-frame';clip=document.createElement('div');clip.className='panel-focus-clip';frame.append(clip);
+      hint=document.createElement('p');hint.id='panel-focus-hint';hint.className='panel-focus-hint';modal.append(toolbar,frame,hint);document.body.append(modal);
+      modal.addEventListener('cancel',event=>{event.preventDefault();close();});
+      modal.addEventListener('close',()=>{if(selection&&!modal.open)close();});
+      modal.addEventListener('keydown',event=>{
+        if(event.key!=='Tab')return;
+        const items=[...modal.querySelectorAll('button:not([disabled]),.panel-host:not([inert]):not([data-background-only="true"])')].filter(n=>n.getAttribute('tabindex')!=='-1');
+        if(!items.length)return;const at=items.indexOf(document.activeElement);
+        if(event.shiftKey&&at<=0){event.preventDefault();items.at(-1).focus({preventScroll:true});}
+        else if(!event.shiftKey&&at===items.length-1){event.preventDefault();items[0].focus({preventScroll:true});}
+      });
+      frame.addEventListener('pointerdown',event=>{
+        if(event.pointerType!=='touch'||!selection)return;
+        touches.set(event.pointerId,{x:event.clientX,y:event.clientY});
+        if(touches.size>=2){
+          if(!pinchLocked){pinchLocked=true;document.body.dataset.pageGesture='pinch';document.dispatchEvent(new Event('comic-page-gesture-change'));players.forEach(p=>p.pause());}
+          const g=geometry();gesture={...g,zoom:focusZoom,offsetX,offsetY};
+          for(const id of touches.keys()){try{frame.setPointerCapture(id);}catch(_){}}
+          consume(event);
+        }
+      },{capture:true,passive:false});
+      window.addEventListener('pointermove',event=>{
+        if(!selection||!touches.has(event.pointerId))return;
+        touches.set(event.pointerId,{x:event.clientX,y:event.clientY});
+        if(!pinchLocked)return;
+        if(touches.size===2&&gesture){
+          const g=geometry(),r=frame.getBoundingClientRect();
+          focusZoom=Math.max(1,Math.min(4,gesture.zoom*g.distance/gesture.distance));
+          const ratio=focusZoom/gesture.zoom;
+          offsetX=g.x-r.left-r.width/2-ratio*(gesture.x-r.left-r.width/2-gesture.offsetX);
+          offsetY=g.y-r.top-r.height/2-ratio*(gesture.y-r.top-r.height/2-gesture.offsetY);layout();
+        }
+        consume(event);
+      },{capture:true,passive:false});
+      const finish=event=>{if(!selection||!touches.has(event.pointerId))return;touches.delete(event.pointerId);if(pinchLocked){gesture=null;ignoreClickUntil=performance.now()+350;if(!touches.size)resetTouch();consume(event);}};
+      window.addEventListener('pointerup',finish,{capture:true,passive:false});window.addEventListener('pointercancel',finish,{capture:true,passive:false});
+      frame.addEventListener('lostpointercapture',event=>{if(event.target===frame&&touches.has(event.pointerId))resetTouch();},true);
+      for(const type of ['click','dblclick'])frame.addEventListener(type,event=>{if(pinchLocked||performance.now()<ignoreClickUntil)consume(event);},true);
+      new ResizeObserver(layout).observe(frame);
+      new MutationObserver(syncBadges).observe(panelLayer,{childList:true});
+      refresh();
+    }
+    function close(options={}) {
+      if(!selection)return;
+      const prior=saved, marker=prior.marker;resetTouch();selection=null;saved=null;
+      prior.placeholder.replaceWith(stage);stage.style.cssText=prior.stageStyle;
+      for(const item of prior.hosts){item.host.inert=item.inert;item.host.tabIndex=item.tabIndex;}
+      for(const badge of panelLayer.querySelectorAll('.panel-loading-percent'))delete badge.dataset.panelFocusCurrent;
+      if(entryLayer)entryLayer.hidden=false;
+      if(modal.open)modal.close();delete document.body.dataset.panelFocus;
+      sizeStage();viewport.scrollLeft=prior.left;viewport.scrollTop=prior.top;
+      if(options.restoreFocus!==false&&prior.opener?.isConnected)prior.opener.focus({preventScroll:true});
+      if(history.state?.comicPanelFocus===marker){
+        if(options.restoreFocus===false)history.replaceState(prior.history,'',location.href);
+        else { backPending=true; history.back(); }
+      }
+      emit();
+    }
+    function open(item) {
+      if(backPending){pendingOpen=item;return;}
+      if(selection||!loaded||document.querySelector('dialog[open]'))return;
+      ensureModal();pageGesture.reset();clearPageTurn();players.forEach(p=>p.pause());
+      const placeholder=document.createComment('live-page-stage-focus-return');
+      const marker=`panel-${Date.now()}-${item.index}`;
+      saved={placeholder,stageStyle:stage.style.cssText,left:viewport.scrollLeft,top:viewport.scrollTop,opener:item.button,history:history.state,marker,hosts:[]};
+      selection=item;focusZoom=1;offsetX=offsetY=0;
+      for(const host of panelLayer.querySelectorAll('.panel-host')){saved.hosts.push({host,inert:host.inert,tabIndex:host.tabIndex});if(host!==item.host){host.inert=true;host.tabIndex=-1;}}
+      stage.replaceWith(placeholder);clip.append(stage);if(entryLayer)entryLayer.hidden=true;
+      document.body.dataset.panelFocus='active';refresh();modal.showModal();layout();
+      try{history.pushState({...history.state,comicPanelFocus:marker},'',location.href);}catch(_){}
+      back.focus({preventScroll:true});emit();
+    }
+    function mount(page) {
+      close({restoreFocus:false});entryLayer?.remove();entries=[];
+      entryLayer=document.createElement('div');entryLayer.className='panel-focus-entries';
+      const seen=new Set();
+      for(const host of panelLayer.querySelectorAll('.panel-host:not([data-background-only="true"])')){
+        const panel=(page.panels||[]).find(p=>p.id===host.dataset.sourcePanelId);if(!panel)continue;
+        const b=panel.bounds;let q=null;
+        if(host.dataset.interactionRect){try{const r=JSON.parse(host.dataset.interactionRect);q={x:b.x+r.x,y:b.y+r.y,width:r.width,height:r.height};}catch(_){continue;}}
+        else q={...b};
+        if(!q||![q.x,q.y,q.width,q.height].every(Number.isFinite)||q.x<0||q.y<0||q.width<=0||q.height<=0||q.x+q.width>page.width||q.y+q.height>page.height)continue;
+        const key=JSON.stringify(q);if(seen.has(key))continue;seen.add(key);
+        const button=document.createElement('button');button.type='button';button.className='panel-focus-entry';button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-controls','panel-focus-dialog');
+        const item={button,host,page,rect:q,index:entries.length};button.style.left=`${(q.x+q.width)/page.width*100}%`;button.style.top=`${(q.y+q.height)/page.height*100}%`;
+        // Entries are separate from the orbit surface, so a tap, double tap,
+        // drag, or two-finger page gesture keeps its established meaning.
+        for(const type of ['pointerdown','dblclick'])button.addEventListener(type,event=>event.stopPropagation());
+        button.addEventListener('click',event=>{event.stopPropagation();open(item);});entryLayer.append(button);entries.push(item);
+      }
+      stage.append(entryLayer);ensureModal();refresh();
+    }
+    document.addEventListener('comic-page-navigation-start',()=>{pendingOpen=null;close({restoreFocus:false});});
+    document.addEventListener('comic-language-change',event=>{language=event.detail?.language||language;queueMicrotask(refresh);});
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)resetTouch();});
+    window.addEventListener('pagehide',()=>close({restoreFocus:false}));
+    window.addEventListener('popstate',()=>{
+      if(backPending){backPending=false;const next=pendingOpen;pendingOpen=null;if(next)queueMicrotask(()=>{if(next.host.isConnected)open(next);});return;}
+      if(selection&&history.state?.comicPanelFocus!==saved.marker)close({restoreFocus:false});
+    });
+    // Phone input may continue to control this live panel; sibling scenes keep
+    // their selected angles while they are outside the focused reading view.
+    document.addEventListener('comic-phone-angle',event=>{if(selection&&event.target!==selection.host)event.stopImmediatePropagation();},true);
+    const api=Object.freeze({mount,close,resize:layout,get active(){return !!selection;},get rect(){return selection?{...selection.rect}:null;}});
+    window.ComicPanelFocus=api;return api;
+  })();
 
   const directoryThumbnails = {2:'ui-assets/directory/page-002-5ea06412b259.webp',36:'ui-assets/directory/page-036-7940008d7245.webp',60:'ui-assets/directory/page-060-c01a4d9ddf0e.webp'};
   // A cached earlier HTML shell can load the current shared script URL.
@@ -3593,6 +3785,52 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   window.ComicReaderTools = Object.freeze({refresh:refreshReaderTools});
   }
 
+  // Chapter-local positions supplement the collection position and never override a URL.
+  const chapterBookmarks = (() => {
+    const key = ch => `just-cuz-collection-chapter-${ch.id}-page-v1`;
+    const languages = ['zh','en','ja','ko','ru','fr'];
+    const labels = {
+      resume:['继续第 {n} 页','Continue · page {n}','{n} ページから再開','{n}페이지부터 계속','Продолжить · стр. {n}','Reprendre · page {n}'],
+      start:['从头阅读','From the start','最初から読む','처음부터 읽기','С начала','Depuis le début'],
+      quiet:['自动淡化工具','Fade tools while reading','読書中にツールを薄くする','읽는 동안 도구 흐리게','Приглушать инструменты при чтении','Estomper les outils pendant la lecture']
+    };
+    function text(name,n) {
+      const lang = window.ComicLocaleUI?.language || $('reading-language')?.value || 'zh';
+      return labels[name][Math.max(0,languages.indexOf(lang))].replace('{n}',String(n));
+    }
+    function saved(ch) {
+      if (ch.id === 'collection-cover') return null;
+      try { const raw = localStorage.getItem(key(ch)); const n = Number(raw); return raw !== null && Number.isInteger(n) && n >= ch.start && n <= ch.end ? n : null; } catch (_) { return null; }
+    }
+    function resume(ch) { return saved(ch) ?? ch.start; }
+    function refresh() {
+      for (const ch of book.chapters) {
+        const card = document.querySelector(`.directory-story[data-chapter="${ch.id}"]`);
+        const n = saved(ch), label = n === null ? text('start') : text('resume',n);
+        if (card) {
+          let note = card.querySelector('.chapter-continue');
+          if (!note) { note = document.createElement('span'); note.className = 'chapter-continue'; card.append(note); }
+          note.textContent = label;
+          card.setAttribute('aria-label',`${card.querySelector('.directory-story-title')?.textContent || ch.title} · ${label}`);
+        }
+        const start = document.querySelector(`.chapter-from-start[data-chapter="${ch.id}"]`);
+        if (start) start.textContent = text('start');
+      }
+      const control = $('automatic-quiet-tools');
+      if (control) control.textContent = text('quiet');
+    }
+    document.addEventListener('comic-page-original-ready',event => {
+      const n = Number(event.detail?.readingPage), ch = chapterOf(n), page = pages[n-1];
+      // The application emits this only after the original has loaded successfully.
+      if (!ch || ch.id === 'collection-cover' || !page || n !== current || event.detail.sourcePageSha256 !== page.sha256) return;
+      try { localStorage.setItem(key(ch),String(n)); } catch (_) {}
+      refresh();
+    });
+    window.ComicReadingDetails = Object.freeze({refresh});
+    return {resume,refresh,text};
+  })();
+
+
   book.chapters.forEach(ch => {
     if (directoryThumbnails[ch.start] && $('directory-story-cards')) {
       const card = document.createElement('button'); card.type = 'button';
@@ -3604,8 +3842,11 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       const title = document.createElement('span'); title.className = 'directory-story-title'; title.textContent = ch.title;
       const range = document.createElement('span'); range.className = 'directory-story-range'; range.textContent = `${ch.start}–${ch.end}`;
       card.append(cover, title, range);
-      card.addEventListener('click', () => { $('directory-dialog').close(); showPage(ch.start); });
-      $('directory-story-cards').append(card);
+      card.addEventListener('click', () => { $('directory-dialog').close(); showPage(chapterBookmarks.resume(ch)); });
+      const wrap = document.createElement('div'); wrap.className = 'directory-story-wrap';
+      const start = document.createElement('button'); start.type = 'button'; start.className = 'chapter-from-start'; start.dataset.chapter = ch.id;
+      start.addEventListener('click',() => { $('directory-dialog').close(); showPage(ch.start); });
+      wrap.append(card,start); $('directory-story-cards').append(wrap);
     }
     const option = document.createElement('option');
     option.value = ch.start;
@@ -3766,6 +4007,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   });
 
   function sizeStage() {
+    if (window.ComicPanelFocus?.active) { window.ComicPanelFocus.resize(); return; }
     const page = pages[current - 1];
     const viewportW = viewport.clientWidth;
     const viewportH = viewport.clientHeight;
@@ -3848,6 +4090,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   });
 
   function clearPlayers() {
+    window.ComicPanelFocus?.close({restoreFocus:false});
     window.OrbitFrameCache?.resetPageManualSelections?.();
     window.OrbitFrameCache?.setPagePreviewReady(false);
     players.forEach(player => player.destroy()); players = []; panelLayer.replaceChildren(); panelControls.replaceChildren(); panelControls.hidden = true;
@@ -3896,12 +4139,87 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     $('reset-panels').hidden = !players.length;
     $('reset-panels').textContent = '复位本页';
     panelControls.hidden = true; panelControls.inert = true; panelControls.setAttribute('aria-hidden', 'true');
+    panelFocus.mount(page);
     const done = candidatePanels.filter(p => p.quality === 'passed').length;
     const pendingPanel = candidatePanels.find(panel => !window.ComicPanelPlayer.displayable(panel, page));
     $('page-caption').textContent = interactionCount ? '拖动单格 · 双击还原视角' : pendingPanel && pendingPanel.pendingReason || '原画完整呈现';
     queuePanelStatus();
   }
   $('reset-panels').addEventListener('click', () => players.forEach(player => player.reset()));
+
+  // This small paper tag is created by the runtime, including with cached HTML.
+  // A pending page has no visible/accessible previous artwork under its number.
+  let renderedPage = 0, navigationSnapshot = null;
+  function createNavigationFeedback() {
+    const style = document.createElement('style');
+    style.id = 'reader-page-navigation-style';
+    style.textContent = `
+      #page-stage[data-navigation-state="loading"],#page-stage[data-navigation-state="error"] {
+        background:var(--story-grain) left top / 160px 160px repeat,var(--binding-paper,#fffdf4);
+      }
+      #page-stage[data-navigation-state="loading"] > :is(#page-image,#panel-layer,#comic-translation-layer),
+      #page-stage[data-navigation-state="error"] > :is(#page-image,#panel-layer,#comic-translation-layer) { visibility:hidden !important; }
+      #page-navigation-feedback {
+        position:absolute; z-index:15; top:17px; right:0; max-width:calc(100% - 24px);
+        margin:0; padding:11px 17px 11px 19px; border:1px solid #ad966b; border-right:0;
+        border-radius:6px 0 0 8px; background:var(--story-grain) left top / 90px 90px repeat,#fff0be;
+        color:#4e432e; box-shadow:-2px 3px 0 #a28a5740;
+        font-family:inherit; font-size:13px; font-weight:700; line-height:1.5;
+        overflow-wrap:anywhere; pointer-events:none; transform-origin:left center;
+      }
+      #page-navigation-feedback:not([hidden]) { animation:book-target-tab 160ms ease-out both; }
+      #page-navigation-feedback[hidden] { display:none !important; }
+      @keyframes book-target-tab { from { transform:translateX(7px); } to { transform:translateX(0); } }
+      @media(prefers-reduced-motion:reduce) { #page-navigation-feedback:not([hidden]) { animation:none; } }
+    `;
+    document.head.append(style);
+    const tag = document.createElement('p');
+    tag.id = 'page-navigation-feedback'; tag.hidden = true;
+    tag.setAttribute('role','status'); tag.setAttribute('aria-live','polite'); tag.setAttribute('aria-atomic','true');
+    stage.append(tag);
+    const messages = {
+      zh:['正在翻到第 {n} 页…','第 {n} 页尚未打开'],
+      en:['Opening page {n}…','Page {n} could not open'],
+      ja:['{n}ページを開いています…','{n}ページを開けませんでした'],
+      ko:['{n}쪽을 여는 중…','{n}쪽을 열 수 없어요'],
+      ru:['Открываем страницу {n}…','Страница {n} не открылась'],
+      fr:['Ouverture de la page {n}…','La page {n} ne s’est pas ouverte']
+    };
+    let generation = 0, target = 0, phase = 'idle';
+    function refresh(event) {
+      if (phase === 'idle') return;
+      const language = event?.detail?.language || window.ComicLocaleUI?.language || $('reading-language')?.value || 'zh';
+      tag.textContent = (messages[language] || messages.en)[phase === 'error' ? 1 : 0].replace('{n}',target);
+    }
+    document.addEventListener('comic-language-change',refresh);
+    return Object.freeze({
+      begin(number, token, direction) {
+        target = number; generation = token; phase = 'loading';
+        stage.dataset.navigationState = phase; stage.dataset.targetPage = String(number);
+        stage.dataset.navigationGeneration = String(token); stage.dataset.navigationDirection = direction;
+        stage.setAttribute('aria-busy','true');
+        refresh(); tag.hidden = false;
+      },
+      ready(token, number) {
+        if (generation !== token) return;
+        phase = 'idle'; tag.hidden = true; tag.textContent = '';
+        stage.dataset.navigationState = 'ready'; stage.dataset.renderedPage = String(number);
+        stage.removeAttribute('aria-busy');
+      },
+      error(token) {
+        if (generation !== token) return;
+        phase = 'error'; stage.dataset.navigationState = phase;
+        stage.removeAttribute('aria-busy'); refresh(); tag.hidden = true;
+      }
+    });
+  }
+  const navigationFeedback = createNavigationFeedback();
+  function cancelNavigationMotion() {
+    clearPageTurn();
+    navigationSnapshot?.remove(); navigationSnapshot = null;
+  }
+  window.addEventListener('resize',cancelNavigationMotion);
+  window.matchMedia?.('(prefers-reduced-motion: reduce)').addEventListener?.('change',cancelNavigationMotion);
 
   let turningLeaf = null, turningHold = null, turningShadow = null, turningLettering = null, turnTimeout;
 
@@ -3943,7 +4261,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   }
 
   function showPageTurn(previousSheet, direction, destinationImage) {
-    if (!previousSheet || zoom !== 1 || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if (!previousSheet || document.hidden || zoom !== 1 || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
     const back = direction === 'back';
     // Both actions share the same left binding. Going back unfolds the
     // destination leaf over the page we are leaving.
@@ -3992,9 +4310,12 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     number = Math.trunc(Number(number));
     if (!Number.isFinite(number) || number < 1 || number > pages.length) return;
     pageGesture.reset();
+    window.ComicPanelFocus?.close({restoreFocus:false});
     clearPageTurn();
-    const direction = number > current ? 'forward' : 'back';
-    const previousSheet = number === current ? null : capturePageTurn();
+    const previousPage = current;
+    const direction = number > (renderedPage || current) ? 'forward' : 'back';
+    const previousSheet = number === renderedPage ? null : loaded ? capturePageTurn() : navigationSnapshot;
+    navigationSnapshot = previousSheet;
     const page = pages[number - 1];
     window.ComicEarlySourceMasks?.cancelUnless(page.source, page.sha256);
     let artwork = window.ComicReadingArtwork?.(page.source,page.sha256) || page.source;
@@ -4003,6 +4324,8 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     const warmedOriginal = originalWarmup.take(page, artwork);
     originalWarmup.navigate(number);
     current = number; loaded = false; const token = ++loadToken;
+    navigationFeedback.begin(number, token, direction);
+    document.dispatchEvent(new CustomEvent('comic-page-navigation-start', {detail:{pageIndex:number, previousPageIndex:previousPage, generation:token}}));
     if (frameConfigController) frameConfigController.abort();
     frameConfigController = new AbortController();
     const configSignal = frameConfigController.signal;
@@ -4010,8 +4333,10 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     $('panel-sources-button').hidden = true;
     clearSourceCrops();
     if ($('panel-sources-dialog').open) $('panel-sources-dialog').close();
-    clearPlayers(); image.hidden = !previousSheet && !earlyReady;
-    $('page-loading').hidden = !!previousSheet || !!earlyReady; $('page-error').hidden = true;
+    clearPlayers(); image.hidden = !earlyReady;
+    if ($('comic-translation-layer')) $('comic-translation-layer').hidden = true;
+    $('page-loading').hidden = true; $('page-error').hidden = true;
+    panelLayer.setAttribute('aria-busy', 'true');
     $('page-number').value = current;
     $('current-page-label').textContent = `第 ${current} 页`;
     $('page-caption').textContent = '正在打开原页…';
@@ -4032,15 +4357,19 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       if (!window.ComicPageFrames) throw new Error('Current page frame loader unavailable');
       return window.ComicPageFrames.ensure(page, configSignal, modelReady);
     }).then(config => ({config}), error => ({error}));
+    let originalSettled = false;
     const originalReady = () => {
-      if (token !== loadToken) return;
-      loaded = true;
+      if (token !== loadToken || configSignal.aborted || originalSettled) return;
+      originalSettled = true;
+      loaded = true; renderedPage = number;
       if (image.getAttribute('src') !== artwork) image.src = artwork;
       image.width = page.width; image.height = page.height;
       image.alt = `Just Cuz 第 ${current} 页完整原画`;
       image.hidden = false; $('page-loading').hidden = true;
+      navigationFeedback.ready(token, number);
       document.dispatchEvent(new CustomEvent('comic-page-original-ready', {detail:{readingPage:current, sourcePage:page.sourcePage, sourcePageSha256:page.sha256}}));
-      showPageTurn(previousSheet, direction, imageLoader);
+      if (previousSheet === navigationSnapshot) showPageTurn(previousSheet, direction, imageLoader);
+      navigationSnapshot = null;
       $('page-caption').textContent = '正在准备本页互动，原画可以先读';
       panelLayer.setAttribute('aria-busy', 'true');
       configReady.then(result => {
@@ -4070,17 +4399,21 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     imageLoader.fetchPriority = 'high'; imageLoader.decoding = 'async';
     imageLoader.width = page.width; imageLoader.height = page.height;
     const failArtwork = () => {
-      if (token !== loadToken) return;
+      if (token !== loadToken || configSignal.aborted) return;
       if (artwork !== page.source) {
         artwork = page.source;
         imageLoader.src = artwork;
         return;
       }
       frameConfigController.abort();
+      cancelNavigationMotion(); navigationFeedback.error(token);
       image.hidden = true; $('page-loading').hidden = true; $('page-error').hidden = false;
+      panelLayer.setAttribute('aria-busy', 'false');
+      $('page-caption').dataset.state = 'error';
       $('page-caption').textContent = '原页尚未打开';
     };
     imageLoader.onload = () => {
+      if (token !== loadToken || configSignal.aborted) return;
       if (artwork !== page.source && (imageLoader.naturalWidth !== page.width || imageLoader.naturalHeight !== page.height)) {
         failArtwork();
         return;
@@ -4100,7 +4433,7 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     if (!field.reportValidity()) return;
     showPage(field.value);
   });
-  $('chapter-select').addEventListener('change', event => showPage(event.target.value));
+  $('chapter-select').addEventListener('change', event => { const ch = book.chapters.find(ch => ch.start === Number(event.target.value)); if (ch) showPage(chapterBookmarks.resume(ch)); });
   $('retry-page').addEventListener('click', () => {
     window.ComicAssetDelivery?.retryFailed?.();
     showPage(current);
@@ -4114,8 +4447,8 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
     const actions = {ArrowLeft:() => showPage(current - 1), ArrowRight:() => showPage(current + 1), Home:() => showPage(1), End:() => showPage(pages.length), '+':() => setZoom(zoom * 1.4), '=':() => setZoom(zoom * 1.4), '-':() => setZoom(zoom / 1.4, zoom / 1.4 <= 1)};
     if (actions[event.key]) { event.preventDefault(); actions[event.key](); }
   });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) players.forEach(player => player.pause()); });
-  window.addEventListener('pagehide', () => { players.forEach(player => player.pause()); clearSourceCrops(); if ($('panel-sources-dialog').open) $('panel-sources-dialog').close(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { players.forEach(player => player.pause()); cancelNavigationMotion(); } });
+  window.addEventListener('pagehide', () => { players.forEach(player => player.pause()); cancelNavigationMotion(); clearSourceCrops(); if ($('panel-sources-dialog').open) $('panel-sources-dialog').close(); });
   $('book-count').textContent = `${pages.length} 页 · 含合集首页`;
   const verifiedSourceCount = Number.isInteger(book.verifiedSourcePanelCount) && book.verifiedSourcePanelCount >= 0 ? book.verifiedSourcePanelCount : pages.reduce((total, page) => total + verifiedPanelSources(page).length, 0);
   const sourcePanelTotal = Number.isInteger(book.primaryPanelCount) && book.primaryPanelCount > 0 ? book.primaryPanelCount : Number.isInteger(book.panelSourceInventoryTotal) && book.panelSourceInventoryTotal > 0 ? book.panelSourceInventoryTotal : null;
@@ -4136,6 +4469,45 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
       first = saved !== null ? Number(saved) || 1 : 1;
     } catch (_) {}
   }
+  // Quiet chrome keeps its occupied space and all controls in the tab order.
+  (() => {
+    const storageKey = 'just-cuz-collection-quiet-tools-v1';
+    const control = document.createElement('button'); control.id = 'automatic-quiet-tools'; control.type = 'button';
+    $('focus-reading')?.after(control);
+    let enabled = true, timer = null;
+    const pointers = new Set();
+    try { enabled = localStorage.getItem(storageKey) !== 'off'; } catch (_) {}
+    function obstructed() {
+      const active = document.activeElement;
+      return !enabled || document.hidden || pointers.size > 0 || window.ComicPanelFocus?.active
+        || !!document.querySelector('dialog[open],details.reader-tools[open]')
+        || !image.getAttribute('src') || image.hidden || !$('page-loading').hidden || !$('page-error').hidden
+        || $('page-caption').dataset.state !== 'ready' || panelLayer.getAttribute('aria-busy') === 'true'
+        || !!active?.closest('.book-header,.reader-toolbar,.reader-actions,footer');
+    }
+    function arm() {
+      clearTimeout(timer); timer = null;
+      if (!obstructed()) timer = setTimeout(() => { timer = null; if (!obstructed()) document.body.classList.add('reading-tools-quiet'); },5000);
+    }
+    function wake() { document.body.classList.remove('reading-tools-quiet'); arm(); }
+    function state() { control.setAttribute('aria-pressed',String(enabled)); chapterBookmarks.refresh(); wake(); }
+    control.addEventListener('click',() => { enabled = !enabled; try {localStorage.setItem(storageKey,enabled ? 'on' : 'off');} catch (_) {} state(); });
+    document.addEventListener('pointerdown',event => { pointers.add(event.pointerId); wake(); },{capture:true,passive:true});
+    const finish = event => { pointers.delete(event.pointerId); wake(); };
+    for (const name of ['pointerup','pointercancel','lostpointercapture']) document.addEventListener(name,finish,{capture:true,passive:true});
+    for (const name of ['pointermove','keydown','focusin','focusout','wheel']) document.addEventListener(name,wake,{capture:true,passive:true});
+    for (const name of ['comic-page-navigation-start','comic-page-original-ready','comic-page-previews-ready','comic-panel-status','comic-panel-focus-change','visibilitychange']) document.addEventListener(name,wake);
+    for (const details of document.querySelectorAll('details.reader-tools')) details.addEventListener('toggle',wake);
+    const observer = new MutationObserver(wake);
+    for (const [element,attributes] of [[panelLayer,['aria-busy']],[$('page-caption'),['data-state']],[$('page-error'),['hidden']],[$('page-loading'),['hidden']]]) {
+      if (element) observer.observe(element,{attributes:true,attributeFilter:attributes});
+    }
+    for (const dialog of document.querySelectorAll('dialog')) observer.observe(dialog,{attributes:true,attributeFilter:['open']});
+    window.addEventListener('pagehide',() => { clearTimeout(timer); timer = null; document.body.classList.remove('reading-tools-quiet'); pointers.clear(); });
+    window.addEventListener('pageshow',wake);
+    state();
+  })();
+
   showPage(Math.min(pages.length, Math.max(1, first)));
 })();
 
@@ -4399,52 +4771,81 @@ window.COMIC_PROTECTION_FALLBACKS = Object.freeze({"publication/q107f-caption-cu
   'use strict';
   const audio=document.getElementById('background-music'),toggle=document.getElementById('music-toggle'),volume=document.getElementById('music-volume'),status=document.getElementById('music-status');
   if(!audio||!toggle||!volume||!status)return;
-  let track=0,wanted=true,blocked=false,failed=false,attempt=0,deferred=null;
+  let track=0,loadedTrack=0,wanted=true,blocked=false,failed=false,attempt=0,deferred=null,transition=0,frame=0,level=.3;
   const key=suffix=>`just-cuz-collection-music-${track}-${suffix}`;
   function remember(k,v){try{localStorage.setItem(k,v);}catch(_){}}
-  function render(){const playing=!audio.paused&&!failed;toggle.textContent=playing?'♫ 音乐已开启':blocked?'♫ 点击开启音乐':'♫ 开启音乐';toggle.setAttribute('aria-pressed',String(playing));toggle.setAttribute('aria-label',playing?'暂停背景音乐':'开启背景音乐');status.textContent=failed?'音乐暂时无法打开':playing?'循环播放中':blocked?'点一下页面即可播放':'音乐已暂停';}
+  function render(){const playing=wanted&&!audio.paused&&!failed;toggle.textContent=playing?'♫ 音乐已开启':blocked?'♫ 点击开启音乐':'♫ 开启音乐';toggle.setAttribute('aria-pressed',String(playing));toggle.setAttribute('aria-label',playing?'暂停背景音乐':'开启背景音乐');status.textContent=failed?'音乐暂时无法打开':playing?'循环播放中':blocked?'点一下页面即可播放':'音乐已暂停';}
   function clearDeferred(){clearTimeout(deferred);deferred=null;}
-  async function start(){
+  function cancelFade(){++transition;cancelAnimationFrame(frame);frame=0;++attempt;}
+  function fade(from,to,duration,token,done){
+    const started=performance.now();
+    function step(now){
+      if(token!==transition)return;
+      const progress=Math.min(1,Math.max(0,(now-started)/duration));
+      audio.volume=Math.max(0,Math.min(1,from+(to-from)*progress));
+      if(progress<1)frame=requestAnimationFrame(step);else{frame=0;done?.();}
+    }
+    frame=requestAnimationFrame(step);
+  }
+  async function start(fadeIn=false){
     clearDeferred();
     if(!wanted||failed)return;
-    const token=++attempt;
-    if(!audio.hasAttribute('src'))audio.src=`audio/episode-0${track}-background-web.m4a`;
-    try{await audio.play();if(token===attempt)blocked=false;}catch(error){if(token!==attempt)return;blocked=error.name==='NotAllowedError';failed=!blocked&&error.name!=='AbortError';}if(token===attempt)render();}
+    const token=++attempt,version=transition;
+    if(loadedTrack!==track){audio.pause();audio.src=`audio/episode-0${track}-background-web.m4a`;loadedTrack=track;}
+    audio.loop=true;audio.volume=fadeIn?0:level;
+    try{
+      await audio.play();
+      if(token!==attempt||version!==transition)return;
+      blocked=false;
+      if(fadeIn)fade(audio.volume,level,320,version);
+    }catch(error){
+      if(token!==attempt||version!==transition)return;
+      blocked=error.name==='NotAllowedError';failed=!blocked&&error.name!=='AbortError';audio.volume=level;
+    }
+    if(token===attempt&&version===transition)render();
+  }
   function select(sourcePage){
     const next=sourcePage>=60?3:sourcePage>=36?2:1;
     if(next===track)return;
     const playing=!audio.paused;
-    clearDeferred();
-    ++attempt;
-    audio.pause();
-    if(audio.hasAttribute('src')){
-      audio.removeAttribute('src');
-      audio.load();
-    }
-    track=next;
-    wanted=true;blocked=false;failed=false;
-    let level=30;
+    clearDeferred();cancelFade();
+    track=next;wanted=true;blocked=false;failed=false;
+    let savedLevel=30;
     try{
       wanted=localStorage.getItem(key('enabled'))!=='off';
       const saved=localStorage.getItem(key('volume'));
-      if(saved!==null&&Number.isFinite(Number(saved)))level=Math.max(0,Math.min(100,Number(saved)));
+      if(saved!==null&&Number.isFinite(Number(saved)))savedLevel=Math.max(0,Math.min(100,Number(saved)));
     }catch(_){}
-    volume.value=String(level);
-    audio.volume=level/100;
-    audio.loop=true;
+    volume.value=String(savedLevel);level=savedLevel/100;
+    const version=transition;
+    if(playing){
+      // One audio node: the previous chapter becomes silent before the next source is set.
+      fade(audio.volume,0,240,version,()=>{audio.pause();if(wanted)start(true);else{audio.volume=level;render();}});
+    }else{
+      audio.volume=level;
+      if(wanted)deferred=setTimeout(()=>start(),8000);
+    }
     render();
-    if(!wanted)return;
-    if(playing)start();
-    else deferred=setTimeout(start,8000);
   }
   document.addEventListener('comic-page-previews-ready',()=>{if(deferred!==null)start();});
   document.addEventListener('comic-page-original-ready',event=>select(event.detail.sourcePage));
-  toggle.addEventListener('click',()=>{if(!audio.paused){wanted=false;++attempt;audio.pause();remember(key('enabled'),'off');render();}else{wanted=true;failed=false;remember(key('enabled'),'on');start();}});
-  volume.addEventListener('input',()=>{audio.volume=Number(volume.value)/100;remember(key('volume'),volume.value);});
+  toggle.addEventListener('click',()=>{
+    const pause=wanted&&!audio.paused;
+    clearDeferred();cancelFade();
+    if(pause){wanted=false;blocked=false;audio.pause();audio.volume=level;remember(key('enabled'),'off');render();}
+    else{wanted=true;failed=false;remember(key('enabled'),'on');start();}
+  });
+  volume.addEventListener('input',()=>{
+    const playing=!audio.paused;cancelFade();
+    level=Math.max(0,Math.min(1,Number(volume.value)/100));audio.volume=level;remember(key('volume'),volume.value);
+    if(playing&&wanted&&loadedTrack!==track)start();
+    else if(!wanted)audio.pause();
+  });
   function gesture(event){if(event.isTrusted&&!event.target.closest('.music-controls')&&wanted&&(blocked||deferred!==null)&&!failed)start();}
   document.addEventListener('pointerdown',gesture,{passive:true});document.addEventListener('keydown',gesture);
   for(const event of ['play','pause','volumechange'])audio.addEventListener(event,render);
-  audio.addEventListener('error',()=>{failed=true;blocked=false;render();});
+  audio.addEventListener('error',()=>{if(loadedTrack===track){failed=true;blocked=false;cancelFade();render();}});
+  window.addEventListener('pagehide',()=>{clearDeferred();cancelFade();audio.pause();});
   select(Number((location.hash.match(/^#page=(\d+)$/)||[])[1])||1);
 })();
 
@@ -4657,6 +5058,7 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
       if (match) setAttr(host,'aria-label',t('panelDragLabel',{n:Number(match[1]),panel:Number(match[2])}));
     });
     window.ComicReaderTools?.refresh();
+    window.ComicReadingDetails?.refresh();
     // This localizer does not set data-state, hidden, disabled, media or player readiness.
   }
   let queued = false;
@@ -5112,6 +5514,12 @@ window.COMIC_LOCALES = {"schemaVersion":1,"sourceDigest":"c0c58403325c11cb1bca68
   });
   document.getElementById('close-bilingual').addEventListener('click',()=>dialog.close());
   dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
+  document.addEventListener('comic-page-navigation-start',()=>{
+    letteringJob?.controller.abort(); letteringJob=null; letteringNumber=0; letteringFailed=false;
+    current=null; ++version; elements.length=0; layer.replaceChildren(); layer.hidden=true;
+    delete layer.dataset.sourcePage; delete layer.dataset.sourcePageSha256;
+    textButton.disabled=true; sr.textContent=''; if(dialog.open)dialog.close();
+  });
   document.addEventListener('comic-page-original-ready',e=>requestPage(e.detail.sourcePage));
   document.addEventListener('comic-panel-status',scheduleInteraction);
   new ResizeObserver(sizeLayer).observe(stage);

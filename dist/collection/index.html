@@ -239,7 +239,7 @@
     })();
   </script>
   <link rel="stylesheet" href="reader-styles-7bb8a4d8661e.css">
-  <script defer src="reader.js?v=q295-aa6c38ca9cbb"></script>
+  <script defer src="reader.js?v=q296-e2d4e07cbb1d"></script>
   <script defer src="phone-orbit.js?v=8786f52f42c1"></script>
   <script id="page-model-loader">
 (() => {
@@ -358,6 +358,17 @@
   </style>
   <style id="reader-touch-gestures">
     #page-viewport, #page-viewport .panel-host { touch-action:none; }
+  </style>
+  <style id="reading-details-style">
+    .directory-story-wrap { min-width:0; display:flex; flex-direction:column; gap:5px; }
+    .directory-story-wrap .directory-story { flex:1; width:100%; }
+    .chapter-continue { font-size:11px; line-height:1.25; overflow-wrap:anywhere; }
+    .chapter-from-start { min-height:44px; min-width:0; padding:5px 3px; font:inherit; font-size:11px; color:inherit; background:transparent; border:1px solid #b5a98c; border-radius:7px; overflow-wrap:anywhere; }
+    .book-header,.reader-toolbar,.reader-actions,footer,.help,.pending-note { transition:opacity 260ms ease; }
+    body.reading-tools-quiet .book-header,body.reading-tools-quiet .reader-actions,body.reading-tools-quiet footer,body.reading-tools-quiet .help,body.reading-tools-quiet .pending-note { opacity:.08; }
+    body.reading-tools-quiet .reader-toolbar { opacity:.35; }
+    body.reading-tools-quiet .book-header:focus-within,body.reading-tools-quiet .reader-toolbar:focus-within,body.reading-tools-quiet .reader-actions:focus-within,body.reading-tools-quiet footer:focus-within { opacity:1; }
+    @media(prefers-reduced-motion:reduce) { .book-header,.reader-toolbar,.reader-actions,footer,.help,.pending-note { transition:none; } }
   </style>
 </head>
 <body>
